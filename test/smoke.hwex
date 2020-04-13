@@ -1,0 +1,32 @@
+#a Copyright
+#  
+#  This file 'smoke.csm' copyright Gavin J Stark 2020
+#  
+#  This program is free software; you can redistribute it and/or modify it under
+#  the terms of the GNU General Public License as published by the Free Software
+#  Foundation, version 2.0.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
+#  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+#  for more details.
+
+printf "Regression smoke test %s0%" env_string("test_harness")
+printf "Regression with mif %s0%" env_string("test_mif_filename")
+
+module_force_option_string "tb.th" "clock" clk
+module_force_option_string "tb.th" "inputs" "timer_equalled[3] apb_processor_response__rom_busy apb_processor_response__acknowledge"
+module_force_option_string "tb.th" "outputs" "apb_processor_request__address[16] apb_processor_request__valid"
+module_force_option_string "tb.th" "filename" env_string("test_harness")
+module_force_option_string "tb.apb_rom" "filename" env_string("test_mif_filename")
+module tb_apb_processor tb
+
+clock system_clock 0 1 1
+wire reset_n
+assign reset_n 0 10 1
+    
+drive tb.clk     system_clock
+drive tb.reset_n reset_n
+
+end
+
