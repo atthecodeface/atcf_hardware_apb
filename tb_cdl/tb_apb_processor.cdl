@@ -18,8 +18,8 @@
  * This is a simple testbench for the ROM-based APB transaction processor
  */
 /*a Includes */
+include "std::srams.h"
 include "apb.h"
-include "srams.h"
 include "apb_targets.h"
 include "apb_masters.h"
 
