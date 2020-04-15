@@ -19,6 +19,10 @@ class ApbModules(cdl_desc.Modules):
     modules += [ CdlModule("apb_processor") ]
     modules += [ CdlModule("apb_target_gpio") ]
     modules += [ CdlModule("apb_target_timer") ]
+    modules += [ CdlModule("csr_master_apb") ]
+    modules += [ CdlModule("csr_target_apb") ]
+    modules += [ CdlModule("csr_target_csr") ]
+    modules += [ CdlModule("csr_target_timeout") ]
     modules += [ CdlModule("tb_apb_processor",src_dir=tb_src_dir) ]
     pass
 
