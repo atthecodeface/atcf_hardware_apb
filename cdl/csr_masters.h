@@ -21,8 +21,8 @@
  */
 
 /*a Includes */
-include "apb::apb.h"
-include "apb::csr.h"
+include "apb.h"
+include "csr.h"
 
 /*a Modules */
 /*m csr_master_apb
