@@ -10,9 +10,9 @@ class ApbModules(cdl_desc.Modules):
     c_src_dir   = "cmodel"
     src_dir     = "cdl"
     tb_src_dir  = "tb_cdl"
-    include_dir = "cdl"
     libraries = {"std": True, }
-    export_dirs = [ src_dir, include_dir ]
+    cdl_include_dirs = ["cdl"]
+    export_dirs      = cdl_include_dirs + [ src_dir ]
     modules = []
     modules += [ CdlModule("apb_logging") ]
     modules += [ CdlModule("apb_master_mux") ]

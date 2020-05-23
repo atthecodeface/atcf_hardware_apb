@@ -14,3 +14,6 @@ $(eval $(call cdl_makefile_template,${SRC_ROOT},${BUILD_ROOT},${OTHER_SRCS}))
 smoke: ${SIM}
 	${Q}(cd ${TEST_DIR} && PATH=${CURDIR}/python:${PATH} ${MAKE} Q=${Q} SIM=${SIM} smoke)
 
+python: ${PYSIM}
+	${Q}(cd ${TEST_DIR} && PATH=${CURDIR}/python:${PATH} PYTHONPATH=${BUILD_ROOT}:${CDL_ROOT}/lib/cdl/python:${PYTHONPATH} ${MAKE} Q=${Q} python)
+
