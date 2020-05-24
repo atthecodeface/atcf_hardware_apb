@@ -33,21 +33,20 @@ class apb_timer_thef(ThExecFile):
         for i in range(10):
             timers.append(self.apb.read(0xab010000))
             pass
-        print(timers)
+        for i in timers:print("%08x"%i)
         self.apb.write(0xab010004,timers[-1]+5*(timers[-1]-timers[-2]))
         comparators = []
         for i in range(10):
             comparators.append( (self.apb.read(0xab010004),self.apb.read(0xab010000)) )
             pass
-        print(comparators)
+        for (i,j) in comparators:print("%08x %08x"%(i,j))
         self.passtest("Test succeeded")
         pass
 
 #c ApbTimerHardware
 class ApbTimerHardware(HardwareThDut):
-    clock_desc = [("clk",(0,1,1)),
-    ]
-    reset_desc = {"name":"reset_in", "init_value":1, "wait":19}
+    clock_desc = [("clk",(0,1,1))]
+    reset_desc = {"name":"reset_n", "init_value":0, "wait":5}
     module_name = "apb_target_timer"
     dut_outputs = {"apb_response":apb_response,
                    "timer_equalled":3
@@ -66,3 +65,5 @@ class TestApbTimer(TestCase):
         self.run_test(hw_args={"verbosity":0}, run_time=5000)
         pass
     pass
+
+test_suite = [TestApbTimer]

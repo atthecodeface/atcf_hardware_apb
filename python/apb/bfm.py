@@ -18,6 +18,7 @@ from .structs import apb_request, apb_response
 #c ApbMaster
 class ApbMaster(object):
     def __init__(self, th:object, request_name:str, response_name:str):
+        self.th = th
         for k in apb_request:
             setattr(self, k, getattr(th, "%s__%s"%(request_name, k)))
             pass
@@ -37,11 +38,11 @@ class ApbMaster(object):
         self.paddr.drive(address)
         self.pwdata.drive(data)
         self.pwrite.drive(1)
-        th.bfm_wait(1)
+        self.th.bfm_wait(1)
         self.penable.drive(1)
-        th.bfm_wait(1)
+        self.th.bfm_wait(1)
         while self.pready.value()==0:
-            th.bfm_wait(1)
+            self.th.bfm_wait(1)
             pass
         self.psel.drive(0)
         pass
@@ -52,11 +53,11 @@ class ApbMaster(object):
         self.paddr.drive(address)
         self.pwdata.drive(0xdeadbeef)
         self.pwrite.drive(0)
-        self.bfm_wait(1)
+        self.th.bfm_wait(1)
         self.penable.drive(1)
-        th.bfm_wait(1)
+        self.th.bfm_wait(1)
         while self.pready.value()==0:
-            th.bfm_wait(1)
+            self.th.bfm_wait(1)
             pass
         self.psel.drive(0)
         return self.prdata.value()
