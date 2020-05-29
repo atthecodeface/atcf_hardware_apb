@@ -12,8 +12,8 @@
 #  for more details.
 
 #a Imports
-from apb.structs import apb_request, apb_response
-from apb.bfm     import ApbMaster
+from regress.apb.structs import t_apb_request, t_apb_response
+from regress.apb.bfm     import ApbMaster
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
 from cdl.sim     import TestCase
@@ -48,10 +48,10 @@ class ApbTimerHardware(HardwareThDut):
     clock_desc = [("clk",(0,1,1))]
     reset_desc = {"name":"reset_n", "init_value":0, "wait":5}
     module_name = "apb_target_timer"
-    dut_outputs = {"apb_response":apb_response,
+    dut_outputs = {"apb_response":t_apb_response,
                    "timer_equalled":3
     }
-    dut_inputs  = {"apb_request":apb_request,
+    dut_inputs  = {"apb_request":t_apb_request,
     }
     th_options = {"signal_object_prefix":"signal__",
                  }
@@ -66,4 +66,3 @@ class TestApbTimer(TestCase):
         pass
     pass
 
-test_suite = [TestApbTimer]

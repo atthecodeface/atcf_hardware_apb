@@ -18,7 +18,7 @@
  */
 
 /*a Includes */
-include "types/apb.h"
+include "apb.h"
 
 /*a Modules - see also csr_target_apb, csr_master_apb in csr_interface.h */
 /*m apb_logging
