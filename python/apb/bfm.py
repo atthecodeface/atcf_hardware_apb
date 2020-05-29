@@ -17,8 +17,21 @@
 
 #a Imports
 from .structs import t_apb_request, t_apb_response
+from cdl.utils   import csr
 
 #a Test classes
+#c ApbReg
+class ApbReg(object):
+    def __init__(self, apb:'ApbMaster', reg:csr.Csr):
+        self.apb = apb
+        self.reg = reg
+        pass
+    def read(self):
+        return self.apb.read(self.reg.Address())
+    def write(self, data):
+        return self.apb.write(self.reg.Address(), data)
+    pass
+
 #c ApbMaster
 class ApbMaster(object):
     def __init__(self, th:object, request_name:str, response_name:str):
@@ -35,6 +48,9 @@ class ApbMaster(object):
         self.pwdata.drive(0)
         self.pwrite.drive(0)
         pass
+    #f reg
+    def reg(self, reg):
+        return ApbReg(self, reg)
     #f transaction
     def transaction(self, write_not_read, address, data):
         self.psel.drive(1)

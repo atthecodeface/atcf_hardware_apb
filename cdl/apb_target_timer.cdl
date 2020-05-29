@@ -21,6 +21,7 @@
 /*a Includes
  */
 include "apb.h"
+include "apb_utilities.h"
 
 /*a Types */
 /*t t_apb_address
@@ -138,7 +139,8 @@ while atomically clearing it.
         }
         }
 
-        /*b All done */
+        /*b All done  - just have a logger */
+        apb_logging logger(clk<-clk, reset_n<=reset_n, apb_request<=apb_request, apb_response<=apb_response);
     }
 
     /*b Handle the timer and comparators */

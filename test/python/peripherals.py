@@ -17,27 +17,41 @@ from regress.apb.bfm     import ApbMaster
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
 from cdl.sim     import TestCase
+import apb.target_timer
+import apb.target_gpio
 
+from cdl.utils   import csr
+class ApbAddressMap(csr.Map):
+    _width=32
+    _select=0
+    _address=0
+    _shift=2
+    _address_size=0
+    _map=[csr.MapMap(offset=0, name="timer", map=apb.target_timer.TimerAddressMap),
+         ]
+    pass
 #c apb_timer_thef
 class apb_timer_thef(ThExecFile):
     th_name = "APB timer test harness"
     def run(self) -> None:
         self.apb = ApbMaster(self, "signal__apb_request",  "signal__apb_response")
+        self.apb_map = ApbAddressMap()
+        self.timer_map  = self.apb_map.timer # This is an ApbAddressMap()
+        self.timer      = self.apb.reg(self.timer_map.timer)
+        self.timer_cmp0 = self.apb.reg(self.timer_map.comparator0)
         self.bfm_wait(25)
-        self.apb.write(0xfc001234,0x2)
-        self.apb.write(0xab010004,0xdeedbeef)
-        self.apb.write(0xfc001234,0x3)
-        self.apb.write(0xab015678,0xdeedbeef)
-        print("Read %08x"%self.apb.read(0xab010004))
+        self.timer_cmp0.write(0xdeedbeef)
+        print("Read %08x"%self.timer_cmp0.read())
         timers = []
         for i in range(10):
-            timers.append(self.apb.read(0xab010000))
+            timers.append(self.timer.read())
             pass
         for i in timers:print("%08x"%i)
-        self.apb.write(0xab010004,timers[-1]+5*(timers[-1]-timers[-2]))
+        apb_write_in_cycles = (timers[-1]-timers[-2])
+        self.timer_cmp0.write(timers[-1]+5*apb_write_in_cycles)
         comparators = []
         for i in range(10):
-            comparators.append( (self.apb.read(0xab010004),self.apb.read(0xab010000)) )
+            comparators.append( (self.timer_cmp0.read(),self.timer.read()) )
             pass
         for (i,j) in comparators:print("%08x %08x"%(i,j))
         self.passtest("Test succeeded")

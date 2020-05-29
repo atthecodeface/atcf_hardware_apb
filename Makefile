@@ -4,6 +4,7 @@ SRC_ROOT   = $(abspath ${CURDIR})
 OTHER_SRCS = ${SRC_ROOT}/../*
 BUILD_ROOT = ${SRC_ROOT}/build
 TEST_DIR   = ${CURDIR}/test
+TEST_MAKE_ENV  = PATH=${CURDIR}/python:${PATH} PYTHONPATH=${BUILD_ROOT}:${CDL_ROOT}/lib/cdl/python:${PYTHONPATH}
 
 all: sim
 
