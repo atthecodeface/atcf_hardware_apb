@@ -17,8 +17,7 @@ from regress.apb.bfm     import ApbMaster
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
 from cdl.sim     import TestCase
-import apb.target_timer
-import apb.target_gpio
+from regress.apb import target_timer, target_gpio
 
 from cdl.utils   import csr
 class ApbAddressMap(csr.Map):
@@ -27,7 +26,7 @@ class ApbAddressMap(csr.Map):
     _address=0
     _shift=2
     _address_size=0
-    _map=[csr.MapMap(offset=0, name="timer", map=apb.target_timer.TimerAddressMap),
+    _map=[csr.MapMap(offset=0, name="timer", map=target_timer.TimerAddressMap),
          ]
     pass
 #c apb_timer_thef
