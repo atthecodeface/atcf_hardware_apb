@@ -1,15 +1,19 @@
 #a Copyright
 #  
-#  This file 'bfm.py' copyright Gavin J Stark 2017-2020
-#  
-#  This program is free software; you can redistribute it and/or modify it under
-#  the terms of the GNU General Public License as published by the Free Software
-#  Foundation, version 2.0.
-#  
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even implied warranty of MERCHANTABILITY
-#  or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-#  for more details.
+#  This file 'test_timer.py' copyright Gavin J Stark 2017-2020
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 #a Imports
 from regress.apb.structs import t_apb_request, t_apb_response
@@ -68,14 +72,12 @@ class ApbTimerHardware(HardwareThDut):
     }
     th_options = {"signal_object_prefix":"signal__",
                  }
-    th_exec_file_object_fn = apb_timer_thef
     pass
 
 #c TestApbTimer
 class TestApbTimer(TestCase):
     hw = ApbTimerHardware
-    def test_1(self)->None:
-        self.run_test(hw_args={"verbosity":0}, run_time=5000)
-        pass
+    _tests = {"simple": (apb_timer_thef, 5*1000, {"verbosity":0}),
+              }
     pass
 
