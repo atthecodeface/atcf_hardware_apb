@@ -30,8 +30,8 @@ class TimerComparatorCsr(Csr):
 
 class TimerAddressMap(Map):
     _map = [ MapCsr(reg=0, name="timer", brief="tmr", csr=TimerCsr, doc=""),
-             MapCsr(reg=1, name="comparator0", brief="cmp0", csr=TimerComparatorCsr, doc=""),
-             MapCsr(reg=2, name="comparator1", brief="cmp1", csr=TimerComparatorCsr, doc=""),
-             MapCsr(reg=3, name="comparator2", brief="cmp2", csr=TimerComparatorCsr, doc=""),
+             MapCsr(reg=4, name="comparator0", brief="cmp0", csr=TimerComparatorCsr, doc=""),
+             MapCsr(reg=5, name="comparator1", brief="cmp1", csr=TimerComparatorCsr, doc=""),
+             MapCsr(reg=6, name="comparator2", brief="cmp2", csr=TimerComparatorCsr, doc=""),
              ]
              

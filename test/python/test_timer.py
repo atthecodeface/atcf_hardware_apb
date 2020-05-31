@@ -30,7 +30,7 @@ class ApbAddressMap(csr.Map):
     _width=32
     _select=0
     _address=0
-    _shift=2
+    _shift=0
     _address_size=0
     _map=[csr.MapMap(offset=0, name="timer", map=target_timer.TimerAddressMap),
          ]
@@ -48,17 +48,29 @@ class apb_timer_thef(ThExecFile):
         self.timer_cmp0.write(0xdeedbeef)
         print("Read %08x"%self.timer_cmp0.read())
         timers = []
-        for i in range(10):
-            timers.append(self.timer.read())
+        for i in range(10): timers.append(self.timer.read())
+        mean = 0
+        for t in timers: mean+=t
+        n = len(timers)
+        mean = mean / n
+        rate = (timers[-1] - timers[0]) / (n-1)
+        for i in range(n):
+            e = abs(timers[i] - (mean+rate*(i-(n-1)/2)))
+            if e>1.1: self.failtest("Timer reads did not go up uniformly")
             pass
-        for i in timers:print("%08x"%i)
-        apb_write_in_cycles = (timers[-1]-timers[-2])
+        apb_write_in_cycles = int(rate+1)
         self.timer_cmp0.write(timers[-1]+5*apb_write_in_cycles)
         comparators = []
         for i in range(10):
             comparators.append( (self.timer_cmp0.read(),self.timer.read()) )
             pass
-        for (i,j) in comparators:print("%08x %08x"%(i,j))
+        was_passed = 0
+        for (i,j) in comparators:
+            if (i>>31)&1:
+                was_passed+=1
+                pass
+            pass
+        self.compare_expected("Timer comparator was passed once",was_passed,1)
         self.passtest("Test succeeded")
         pass
 

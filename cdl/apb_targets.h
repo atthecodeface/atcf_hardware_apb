@@ -20,6 +20,7 @@
  */
 
 /*a Includes */
+include "utils::sram_access.h"
 include "apb.h"
 
 /*a Modules */
@@ -57,6 +58,26 @@ extern module apb_target_gpio( clock clk         "System clock",
     timing from rising clock clk apb_response;
     timing from rising clock clk gpio_output, gpio_output_enable, gpio_input_event;
     timing to   rising clock clk gpio_input;
+}
+
+/*m apb_target_sram_interface */
+extern
+module apb_target_sram_interface( clock clk         "System clock",
+                                  input bit reset_n "Active low reset",
+
+                                  input  t_apb_request  apb_request  "APB request",
+                                  output t_apb_response apb_response "APB response",
+
+                                  output bit[32] sram_ctrl "SRAM control for whatever purpose",
+
+                                  output t_sram_access_req  sram_access_req  "SRAM access request",
+                                  input  t_sram_access_resp sram_access_resp "SRAM access response"
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+    timing from rising clock clk sram_access_req, sram_ctrl;
+    timing to   rising clock clk sram_access_resp;
 }
 
 /*a Editor preferences and notes

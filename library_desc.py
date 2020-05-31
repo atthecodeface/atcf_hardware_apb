@@ -19,6 +19,7 @@ class ApbModules(cdl_desc.Modules):
     modules += [ CdlModule("apb_processor") ]
     modules += [ CdlModule("apb_target_gpio") ]
     modules += [ CdlModule("apb_target_timer") ]
+    modules += [ CdlModule("apb_target_sram_interface") ]
     modules += [ CdlModule("csr_master_apb") ]
     modules += [ CdlModule("csr_target_apb") ]
     modules += [ CdlModule("csr_target_csr") ]

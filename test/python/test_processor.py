@@ -25,7 +25,7 @@ from cdl.sim     import TestCase
 from cdl.utils.memory import Memory
 
 from cdl.utils   import csr
-from regress.apb import target_timer, target_gpio
+from regress.apb import target_timer, target_gpio, target_sram_interface
 
 #a Address map
 #c ApbAddressMap
@@ -35,8 +35,9 @@ class ApbAddressMap(csr.Map):
     _address=0
     _shift=0
     _address_size=0
-    _map=[csr.MapMap(offset=0,          shift=2, name="timer", map=target_timer.TimerAddressMap),
-          csr.MapMap(offset=0x10000000, shift=2, name="gpio",  map=target_gpio.GpioAddressMap),
+    _map=[csr.MapMap(offset=0,          name="timer", map=target_timer.TimerAddressMap),
+          csr.MapMap(offset=0x10000000, name="gpio",  map=target_gpio.GpioAddressMap),
+          csr.MapMap(offset=0x20000000, name="sram",  map=target_sram_interface.SramInterfaceAddressMap),
          ]
     pass
 #c ProcessorTestBase
@@ -75,6 +76,35 @@ class ProcessorTestBase(ThExecFile):
     program["code"] += [
         (Rom.op_branch("branch",0),["fail:","fail"]),
         ]
+    program["code"] += [
+        (Rom.op_set("address",apb.sram.control.Address()),["prog_sram_gpio:"]),
+        (Rom.op_req("write_arg",0x123),),
+        (Rom.op_set("address",apb.gpio.input_status.Address()),),
+        (Rom.op_req("read",0),),
+        (Rom.op_alu("and",0xfff8),),
+        (Rom.op_alu("xor",0x123<<3),),
+        (Rom.op_branch("bne",0),["fail"]),
+        (Rom.op_finish(),),
+        ]
+    program["code"] += [
+        (Rom.op_set("address",apb.sram.address.Address()),["prog_sram:"]),
+        (Rom.op_req("write_arg",0),),
+        (Rom.op_set("address",apb.sram.data_inc.Address()),),
+        (Rom.op_set("accumulator",0x1234),),
+        (Rom.op_set("repeat",20),),
+        (Rom.op_req("write_acc",0),["sram_write_loop:"]),
+        (Rom.op_alu("add",0x3),),
+        (Rom.op_branch("loop",0),["sram_write_loop"]),
+        (Rom.op_set("address",apb.sram.address.Address()),),
+        (Rom.op_req("write_arg",0),),
+        (Rom.op_set("address",apb.sram.data_inc.Address()),),
+        (Rom.op_set("repeat",20),),
+        (Rom.op_req("read",0),["sram_read_loop:"]),
+        (Rom.op_branch("loop",0),["sram_read_loop"]),
+        (Rom.op_alu("xor",0x1234 + 20*3),),
+        (Rom.op_branch("bne",0),["fail"]),
+        (Rom.op_finish(),),
+        ]
     programs_to_run = [ "prog_timer_comparator" ]
     #f invoke_program
     def invoke_program(self, address):
@@ -94,6 +124,7 @@ class ProcessorTestBase(ThExecFile):
         pass
     #f run_init
     def run__init(self) -> None:
+        self.bfm_wait(2)
         self.tempfile = self.hardware.tempfile
         self.sim_msg = self.sim_message()
         compiled_program = Rom.compile_program(self.program)
@@ -103,6 +134,8 @@ class ProcessorTestBase(ThExecFile):
         self.tempfile.truncate(0)
         self.memory.write_mif(self.tempfile)
         self.tempfile.flush()
+        # self.tempfile.seek(0)
+        # for l in self.tempfile:print(l)
         self.sim_msg.send_value("dut.apb_rom",2,0) # Force reset the SRAM to load its file
         pass
     def run(self) -> None:
@@ -118,8 +151,10 @@ class ProcessorTestBase(ThExecFile):
 #c ProcessorTest0
 class ProcessorTest0(ProcessorTestBase):
     programs_to_run = [ "prog_finish",
+                        "prog_timer_comparator",
                         "prog_gpio_rw",
-                        "prog_timer_comparator"
+                        "prog_sram_gpio",
+                        "prog_sram",
     ]
     pass
 
@@ -134,6 +169,7 @@ class ApbProcessorHardware(HardwareThDut):
                    "timer_equalled":3
     }
     loggers = { # "apb":{"modules":"dut dut.apb_log", "verbose":1},
+                # "apb":{"modules":"dut.apb_log", "verbose":1},
                 }
     def __init__(self, **kwargs):
         self.tempfile = tempfile.NamedTemporaryFile(mode='w+')

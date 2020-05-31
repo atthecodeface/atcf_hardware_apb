@@ -145,7 +145,10 @@ class Rom(object):
                     pass
                 else:
                     for l in labels:
-                        if l[-1]!=':': op |= label_addresses[l+":"]
+                        if l[-1]!=':':
+                            op |= label_addresses[l+":"]
+                            # print("%08x"%label_addresses[l+":"])
+                            pass
                         pass
                     compiled.add_contents(prog_address, op)
                     pass
