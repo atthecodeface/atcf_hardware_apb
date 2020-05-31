@@ -24,6 +24,8 @@ from cdl.sim     import TestCase
 from regress.apb import target_timer, target_gpio
 
 from cdl.utils   import csr
+
+#c ApbAddressMap
 class ApbAddressMap(csr.Map):
     _width=32
     _select=0
@@ -65,10 +67,10 @@ class ApbTimerHardware(HardwareThDut):
     clock_desc = [("clk",(0,1,1))]
     reset_desc = {"name":"reset_n", "init_value":0, "wait":5}
     module_name = "apb_target_timer"
+    dut_inputs  = {"apb_request":t_apb_request,
+    }
     dut_outputs = {"apb_response":t_apb_response,
                    "timer_equalled":3
-    }
-    dut_inputs  = {"apb_request":t_apb_request,
     }
     th_options = {"signal_object_prefix":"signal__",
                  }
@@ -77,7 +79,7 @@ class ApbTimerHardware(HardwareThDut):
 #c TestApbTimer
 class TestApbTimer(TestCase):
     hw = ApbTimerHardware
-    _tests = {"simple": (apb_timer_thef, 5*1000, {"verbosity":0}),
+    _tests = {"smoke": (apb_timer_thef, 5*1000, {"verbosity":0}),
               }
     pass
 

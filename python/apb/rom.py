@@ -1,5 +1,32 @@
 #!/usr/bin/env python3
+from cdl.utils.memory import Memory
+from typing import Dict, List, Tuple
+
 #a Classes
+class CompiledProgam(object):
+    labels:Dict[str,int]
+    contents:List[Tuple[int,int]]
+    def __init__(self):
+        self.labels = {}
+        self.contents = []
+        pass
+    def add_label(self, name:str, address:int) -> None:
+        self.labels[name] = address
+        pass
+    def add_contents(self, address:int, data:int) -> None:
+        self.contents.append((address,data))
+        pass
+    def add_to_memory(self, memory:Memory, bytes_per_word=8, label_prefix:str="", base_address:int=0) -> None:
+        for (ln, la) in self.labels.items():
+            memory.add_label( label="%s%s"%(label_prefix, ln),
+                              address=la )
+            pass
+        for (a,d) in self.contents:
+            memory.add_data_word(address=(a + base_address)*bytes_per_word,
+                                 data=d)
+            pass
+        pass
+    pass
 #c Rom
 class Rom(object):
     opcodes = {
@@ -99,8 +126,7 @@ class Rom(object):
 
         inc is a post-increment
         """
-        compiled = {"labels":{},
-                    "object":[]}
+        compiled = CompiledProgam()
         label_addresses = {}
         for p in range(2):
             prog_address = address
@@ -121,12 +147,14 @@ class Rom(object):
                     for l in labels:
                         if l[-1]!=':': op |= label_addresses[l+":"]
                         pass
-                    compiled["object"].append( (prog_address,op) )
+                    compiled.add_contents(prog_address, op)
                     pass
                 prog_address = prog_address + 1
                 pass
             pass
-        compiled["labels"] = label_addresses
+        for (ln,la) in label_addresses.items():
+            compiled.add_label(ln, la)
+            pass
         return compiled
     pass
     #f mif_of_compilation
@@ -141,29 +169,18 @@ class Rom(object):
         return (f, lambda x:f.close() )
     @classmethod
     def mif_of_compilation(cls, compiled, filename=''):
-        fmt = "%02x: %010x"
         (f,c) = cls.open_filename(filename)
-        for (a,d) in compiled["object"]:
-            print(fmt%(a,d), file=f)
-            pass
+        memory = Memory(bit_width=40)
+        compiled.add_to_memory(memory, bytes_per_word=5)
+        memory.write_mif(f)
         c(None)
         pass
     @classmethod
     def mem_of_compilation(cls, compiled, filename=''):
-        fmt="%010x"
         (f,c) = cls.open_filename(filename)
-        addresses = []
-        code = {}
-        for (a,d) in compiled["object"]:
-            addresses.append(a)
-            code[a] = d
-            pass
-        addresses.sort()
-        for i in range(addresses[-1]+1):
-            value = 0
-            if i in code: value = code[i]
-            print(fmt%value, file=f)
-            pass
+        memory = Memory(bit_width=40)
+        compiled.add_to_memory(memory, bytes_per_word=5)
+        memory.write_mem(f)
         c(None)
         pass
 
