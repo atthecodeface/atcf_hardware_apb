@@ -78,7 +78,7 @@ typedef struct {
  * Action that the script is taking; this is a decode of the
  * script FSM's state and the current opcode and accumulator
  */
-typedef enum[4] {
+typedef enum[5] {
     script_action_none                  "Script idle - remain in idle",
     script_action_start_clear           "Reset state and do 'get_op' too",
     script_action_get_op                "Start to look at script_if data for an instruction",
@@ -88,6 +88,8 @@ typedef enum[4] {
     script_action_start_apb_read        "Start an APB read request, consume instruction",
     script_action_start_apb_write       "Start an APB write request, consume instruction",
     script_action_start_apb_poll        "Start an APB poll request (sets downcounters), consume instruction",
+    script_action_apb_request_wait      "Wait to start another APB request",
+    script_action_apb_request_repeat    "Start an APB request, same as last time; consume write data if required",
     script_action_poll_wait_completed   "Restart another APB poll request",
     script_action_poll_retry_start      "Decrement poll down counter, set poll delay down counter, and start waiting",
     script_action_poll_wait             "Decrement poll wait downcounter",
@@ -105,17 +107,20 @@ typedef fsm {
         script_fsm_do_instruction
     }     "Script idle - waiting to start";
     script_fsm_do_instruction {
-        script_fsm_apb_request, script_fsm_apb_request_poll, script_fsm_complete
+        script_fsm_do_instruction, script_fsm_apb_request, script_fsm_apb_request_poll, script_fsm_complete
     }     "APB request has been started, and waiting for its completion";
     script_fsm_apb_request {
-        script_fsm_do_instruction
+        script_fsm_do_instruction, script_fsm_apb_request, script_fsm_apb_request_wait
     }     "APB request has been started, and waiting for its completion";
+    script_fsm_apb_request_wait {
+        script_fsm_apb_request_wait, script_fsm_apb_request
+    }     "APB request completed but another needs to happen; presents APB request if read or write data is ready";
     script_fsm_apb_request_poll {
         script_fsm_poll_delay, script_fsm_do_instruction
     }     "APB request has been started, and waiting for its completion";
     script_fsm_poll_delay {
-        script_fsm_apb_request_poll
-    }     "In a wait delay cycle, waiting for accumulator to decrement to zero";
+        script_fsm_poll_delay, script_fsm_apb_request_poll
+    }     "In a wait delay cycle, waiting for it to decrement to zero; presents APB request if delay is 0";
     script_fsm_complete {
         script_fsm_idle
     }     "Completed either okay, with error, or poll failed";
@@ -139,7 +144,7 @@ typedef struct {
     bit[2] bytes_valid "Number of read data bytes valid";
     bit[32] data       "Stored read data, one-hot set poll data";
     bit[8] delay_downcount;
-    bit[8] poll_downcount;
+    bit[8] op_downcount;
 } t_script_state;
 
 /*t t_script_combs
@@ -159,6 +164,8 @@ typedef struct {
     bit[32] apb_address;
     t_apb_script_inst_class opcode_class        "Opcode class of the ROM data @a opcode - ignore if @a opcode_valid deasserted";
     bit[2] opcode_param        "Which parameter is being set for 'set parameter'";
+    bit[3] opcode_num_ops "Number of APB operations -1";
+    bit opcode_inc "If set, increment address between repeat APB operations";
     bit[2] opcode_data_size;
     bit[2] opcode_byte_sel;
     bit[5] opcode_bit_sel;
@@ -432,6 +439,8 @@ Example of using an APB target minimal UART:
 
         script_combs.opcode_class     = script_combs.opcode[2;6];
         script_combs.opcode_param     = script_combs.opcode[2;2];
+        script_combs.opcode_inc       = script_combs.opcode[5];
+        script_combs.opcode_num_ops   = script_combs.opcode[3;2];
         script_combs.opcode_data_size = script_combs.opcode[2;0];
         script_combs.opcode_byte_sel  = script_combs.opcode[2;0];
         script_combs.opcode_bit_sel   = script_combs.opcode[5;0];
@@ -526,7 +535,13 @@ Example of using an APB target minimal UART:
                     script_state.bytes_valid <= script_state.read_bytes_valid;
                 }
                 script_combs.action = script_action_get_op;
+                if (script_state.op_downcount!=0) {
+                    script_combs.action = script_action_apb_request_wait;
+                }
             }
+        }
+        case script_fsm_apb_request_wait: {
+            script_combs.action = script_action_apb_request_repeat;
         }
         case script_fsm_apb_request_poll: {
             script_combs.action = script_action_none;
@@ -534,7 +549,7 @@ Example of using an APB target minimal UART:
                 script_combs.action = script_action_get_op;
                 if (script_combs.polled_bit_mismatch) {
                     script_combs.action = script_action_poll_retry_start;
-                    if (script_state.poll_downcount==0) {
+                    if (script_state.op_downcount==0) {
                         script_combs.action = script_action_complete_poll_failed;
                         script_combs.completed = 1;
                         script_combs.poll_failed = 1;
@@ -556,6 +571,12 @@ Example of using an APB target minimal UART:
             poll_retry = 0,
             address = script_combs.apb_address,
             wdata   = script_combs.req_data};
+        if (script_combs.action==script_action_apb_request_repeat) {
+            script_combs.apb_req.read_not_write = !apb_request.pwrite;
+            script_combs.apb_req.address = apb_request.paddr;
+            script_combs.apb_req.wdata = script_if_state.data[32;0];
+            // Valid will be set below if required
+        }
 
         full_switch (script_combs.action) {
         case script_action_start_clear: {
@@ -593,17 +614,27 @@ Example of using an APB target minimal UART:
                 script_state.read_bytes_valid <= 2;
             }
             script_state.fsm_state <= script_fsm_apb_request;
+            script_state.op_downcount <= bundle(5b0,script_combs.opcode_num_ops);
         }
         case script_action_start_apb_write: {
             script_combs.apb_req.valid = 1;
             script_combs.apb_req.read_not_write = 0;
+            script_state.fsm_state <= script_fsm_apb_request;
+            script_state.op_downcount <= bundle(5b0,script_combs.opcode_num_ops);
+        }
+        case script_action_apb_request_wait: {
+            script_state.op_downcount <= script_state.op_downcount -1 ;
+            script_state.fsm_state <= script_fsm_apb_request_wait;
+        }
+        case script_action_apb_request_repeat: {
+            script_combs.apb_req.valid = 1;
             script_state.fsm_state <= script_fsm_apb_request;
         }
         case script_action_start_apb_poll: {
             script_combs.apb_req.valid = 1;
             script_combs.apb_req.read_not_write = 1;
             script_state.poll_type <= script_combs.opcode_poll_type;
-            script_state.poll_downcount <= script_state.poll_count;
+            script_state.op_downcount <= script_state.poll_count;
             script_state.delay_downcount <= script_state.poll_delay;
             script_state.data <= (32b1 << script_combs.opcode_bit_sel);
             script_state.fsm_state <= script_fsm_apb_request_poll;
@@ -616,7 +647,7 @@ Example of using an APB target minimal UART:
         }
         case script_action_poll_retry_start: {
             script_state.delay_downcount <= script_state.poll_delay;
-            script_state.poll_downcount <= script_state.poll_downcount -1 ;
+            script_state.op_downcount <= script_state.op_downcount -1 ;
             script_state.fsm_state <= script_fsm_poll_delay;
         }
         case script_action_poll_wait: {

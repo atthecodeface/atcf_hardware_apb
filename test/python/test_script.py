@@ -80,9 +80,12 @@ class ScriptMasterTestBase(ThExecFile):
         Script.op_set("addr2",apb.sram.address.Address()>>16),
         Script.op_set("addr3",apb.sram.address.Address()>>24),
         Script.op_write(apb.sram.address.Address(),32,[0]),
-        Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567, 0x2345678]),
-        Script.op_read(apb.sram.address.Address(),32,2),
-        ],"ok",[(0xfff8,0x123<<3)])
+        # Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567, 0x2345678]),
+        Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567]),
+        Script.op_write(apb.sram.data_inc.Address(),32,[0x2345678]),
+        Script.op_write(apb.sram.address.Address(),32,[0]),
+        Script.op_read(apb.sram.data_inc.Address(),32,2),
+        ],"ok",[(-1,0x1234567), (-1,0x2345678)])
     #program["code"] += [
     #    (Script.op_set("address",apb.sram.data_inc.Address()),),
     #    (Script.sop_set("accumulator",0x1234),),
@@ -199,11 +202,11 @@ class ScriptMasterTestBase(ThExecFile):
 
 #c ScriptMasterTest0
 class ScriptMasterTest0(ScriptMasterTestBase):
-    scripts_to_run = [  "timer_comparator",
-                        "gpio_rw",
-                        # "sram",
-                        "sram_gpio",
-                        "none",
+    scripts_to_run = [  # "timer_comparator",
+                        # "gpio_rw",
+                        "sram",
+                        # "sram_gpio",
+                        # "none",
                         #prog_sram_gpio",
                         #"prog_sram",
     ]

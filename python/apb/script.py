@@ -75,7 +75,7 @@ class Script(object):
     def op_read(cls, addr8, data_size, num=1):
         return [(cls.opcodes["opcode_class_read"]<<6) |
                 cls.opcode_subclass["data_size_"+str(data_size)] |
-                (((num%8)-1) << 4),
+                (((num%8)-1) << 2),
                 addr8&0xff]
     #f op_write
     @classmethod
@@ -86,7 +86,7 @@ class Script(object):
         r = []
         r.append( (cls.opcodes["opcode_class_write"]<<6) |
                   cls.opcode_subclass["data_size_"+str(data_size)] |
-                  ((num-1) << 4) )
+                  ((num-1) << 2) )
         r.append(addr8&0xff)
         db = data_size // 8
         for d in data:
