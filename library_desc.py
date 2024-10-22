@@ -17,6 +17,7 @@ class ApbModules(cdl_desc.Modules):
     modules += [ CdlModule("apb_logging") ]
     modules += [ CdlModule("apb_master_mux") ]
     modules += [ CdlModule("apb_processor") ]
+    modules += [ CdlModule("apb_script_master") ]
     modules += [ CdlModule("apb_target_gpio") ]
     modules += [ CdlModule("apb_target_timer") ]
     modules += [ CdlModule("apb_target_sram_interface") ]

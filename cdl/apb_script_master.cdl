@@ -1,0 +1,717 @@
+/** @copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * @copyright
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0.
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ * @file   apb_script_master.cdl
+ * @brief  Pipelined APB request/response master, driven by a ROM
+ *
+ * CDL implementation of an APB master that uses a ROM to generate a
+ * set of APB requests.
+ *
+ */
+/*a Includes */
+include "apb.h"
+
+/*a Types */
+/*t t_apb_script_inst_class
+ *
+ * Enumeration specifying the script instruction opcode classes used
+ */
+typedef enum[2] {
+    opcode_class_set_parameter = 0 "Set the APB address, poll delay, or poll count",
+    opcode_class_apb_poll      = 1 "Request poll of an APB address",
+    opcode_class_apb_read      = 2 "Request an APB read access",
+    opcode_class_apb_write     = 3 "Request an APB write access"
+} t_apb_script_inst_class;
+
+/*t t_script_apb_request
+ *
+ * APB request from the script
+ *
+ * For valid with !poll_retry, it is a read or a write of the given address
+ *
+ * For valid with poll_retry, it is a read of the same address as last time
+ */
+typedef struct {
+    bit valid;
+    bit read_not_write;
+    bit poll_retry;
+    bit[32] wdata;
+    bit[32] address;
+} t_script_apb_request;
+
+/*t t_script_if_action
+ *
+ * Action of the script interface - start, start and clear, or data (or idle)
+ */
+typedef enum[2] {
+    script_if_action_none         "Script FSM is idle - remain in idle",
+    script_if_action_start        "Start the script engine without clearing state",
+    script_if_action_start_clear  "Start the script engine and clear state",
+    script_if_action_data         "Zero or more bytes of (possibly last) data are valid",
+} t_script_if_action;
+
+/*t t_script_if_state
+ *
+ * State of the script interface
+ */
+typedef struct {
+    bit busy;
+    bit completed;
+    t_apb_script_master_resp_type resp;
+    bit data_is_last;
+    bit[48] data;
+    bit[3] num_data_valid;
+} t_script_if_state;
+
+/*t t_script_action
+ *
+ * Action that the script is taking; this is a decode of the
+ * script FSM's state and the current opcode and accumulator
+ */
+typedef enum[4] {
+    script_action_none                  "Script idle - remain in idle",
+    script_action_start_clear           "Reset state and do 'get_op' too",
+    script_action_get_op                "Start to look at script_if data for an instruction",
+    script_action_set_address           "Set 8-bits of the APB address, consume instruction",
+    script_action_set_poll_delay        "Set poll delay, consume instruction",
+    script_action_set_poll_count        "Set poll count, consume instruction",
+    script_action_start_apb_read        "Start an APB read request, consume instruction",
+    script_action_start_apb_write       "Start an APB write request, consume instruction",
+    script_action_start_apb_poll        "Start an APB poll request (sets downcounters), consume instruction",
+    script_action_poll_wait_completed   "Restart another APB poll request",
+    script_action_poll_retry_start      "Decrement poll down counter, set poll delay down counter, and start waiting",
+    script_action_poll_wait             "Decrement poll wait downcounter",
+    script_action_complete_okay         "Enter complete state with okay completion",
+    script_action_complete_errored      "Enter complete state with errored completion",
+    script_action_complete_poll_failed  "Enter complete state with polling failed completion",
+} t_script_action;
+
+/*t t_script_fsm_state
+ *
+ * Script FSM states
+ */
+typedef fsm {
+    script_fsm_idle  {
+        script_fsm_do_instruction
+    }     "Script idle - waiting to start";
+    script_fsm_do_instruction {
+        script_fsm_apb_request, script_fsm_apb_request_poll, script_fsm_complete
+    }     "APB request has been started, and waiting for its completion";
+    script_fsm_apb_request {
+        script_fsm_do_instruction
+    }     "APB request has been started, and waiting for its completion";
+    script_fsm_apb_request_poll {
+        script_fsm_poll_delay, script_fsm_do_instruction
+    }     "APB request has been started, and waiting for its completion";
+    script_fsm_poll_delay {
+        script_fsm_apb_request_poll
+    }     "In a wait delay cycle, waiting for accumulator to decrement to zero";
+    script_fsm_complete {
+        script_fsm_idle
+    }     "Completed either okay, with error, or poll failed";
+} t_script_fsm_state;
+
+/*t t_script_state
+ *
+ * State for the ROM side of the script - effectively program
+ * counter and the data read from the ROM - plus an indication that
+ * the script is idle.
+ *
+ * Script execution state; FSM and APB address, accumulator and repeat count
+ */
+typedef struct {
+    t_script_fsm_state fsm_state   "Script FSM state machine state";
+    bit[32] address                   "Address to be used for APB requests, set using a 'set parameter' opcode - bottom 8 bits are zero as they are supplied with the instruction";
+    bit[8] poll_delay;
+    bit[8] poll_count;
+    bit poll_type;
+    bit[2] read_bytes_valid "Number of read data bytes that will be valid when data is read";
+    bit[2] bytes_valid "Number of read data bytes valid";
+    bit[32] data       "Stored read data, one-hot set poll data";
+    bit[8] delay_downcount;
+    bit[8] poll_downcount;
+} t_script_state;
+
+/*t t_script_combs
+ *
+ * Combinatorial signals decoded from the @a script_state - basically the ROM read request
+ *
+ * Combinatorial decode of the script state, used to control the ROM state and the APB state machine
+ */
+typedef struct {
+    t_script_apb_request apb_req  "APB request to start; should only be valid if APB state machine is idle";
+    t_script_action action        "Action that the script should take";
+
+    bit[8] opcode;
+    bit[8] arg;
+    bit[32] req_data                 "Data for the instruction";
+    bit[3] num_data_valid;
+    bit[32] apb_address;
+    t_apb_script_inst_class opcode_class        "Opcode class of the ROM data @a opcode - ignore if @a opcode_valid deasserted";
+    bit[2] opcode_param        "Which parameter is being set for 'set parameter'";
+    bit[2] opcode_data_size;
+    bit[2] opcode_byte_sel;
+    bit[5] opcode_bit_sel;
+    bit opcode_poll_type;
+
+    bit[3] bytes_required;
+    bit[32] polled_data_bit;
+    bit polled_bit_mismatch;
+
+    bit has_required_bytes;
+
+    bit[3] bytes_consumed;
+
+    bit completed;
+    bit poll_failed;
+    bit errored;
+} t_script_combs;
+
+/*t t_apb_fsm_state
+ *
+ * APB FSM state machine states - the APB FSM drives the APB request
+ * out, and monitors the APB response @a pready to determine
+ * completion of the request
+ */
+typedef fsm {
+    apb_fsm_idle {
+        apb_fsm_select_phase
+    }             "APB request machine idle - it can take a request from the script";
+    apb_fsm_select_phase {
+        apb_fsm_enable_phase
+    }  "APB @a psel is asserted but @penable is deasserted, for the first cycle of an APB access";
+    apb_fsm_enable_phase {
+        apb_fsm_idle
+    }  "Waiting for @a pready to be asserted, indicating completion of the APB access";
+} t_apb_fsm_state;
+
+/*t t_apb_action
+ *
+ * APB action to take - depends on APB state machine and request from script state machine
+ */
+typedef enum[3] {
+    apb_action_none                    "APB should stay in the state it is in",
+    apb_action_start_apb_request_write "APB should be in idle and should start an APB write request",
+    apb_action_start_apb_request_read  "APB should be in idle and should start an APB read request",
+    apb_action_start_apb_request_read_again  "APB should be in idle and should start an APB read request same as the last",
+    apb_action_move_to_enable_phase    "APB is presenting the first cycle of an APB request, and should move to the @a enable phase",
+    apb_action_complete                "APB is completing an APB request - it is in the @a enable phase and @a pready is asserted",
+} t_apb_action;
+
+/*t t_apb_state
+ *
+ * State of the APB requester - at least (and only) the APB FSM state machine
+ */
+typedef struct {
+    t_apb_fsm_state fsm_state  "APB FSM state machine state";
+} t_apb_state;
+
+/*t t_apb_combs
+ *
+ * Combinatorial decode of the APB FSM state machine, incoming request from the script, and APB response @a pready
+ */
+typedef struct {
+    t_apb_action action    "Action that the APB state machine should perform";
+    bit completing_request "Asserted if the APB state machine is completing an APB request - it will be in @a idle in the next cycle";
+} t_apb_combs;
+
+/*a Module */
+module apb_script_master( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                      input bit                reset_n    "Active low reset",
+                      input t_apb_script_master_request    apb_script_req  "Request from the client to execute from an address in the ROM",
+                      output t_apb_script_master_response  apb_script_resp "Response to the client acknowledging a request",
+                      output t_apb_request     apb_request   "Pipelined csr request interface output",
+                      input t_apb_response     apb_response  "Pipelined csr request interface response"
+    )
+"""
+The module is presented with a request to execute a script from a byte
+stream. It executes the script, and hence a set of APB requests, as
+required.
+
+The byte stream for the script provides a variable-length instruction
+stream that allows for reading, writing, and polling the APB. It does
+not support looping (for programmatic APB master operations see the
+apb_script_master).
+
+The data returned from APB reads is presented back to the client, with
+byte strobes set from bit 0 upwards.
+
+The module must be provided with up to 8 valid bytes, with a number of
+valid bytes indicated, plus a 'last' indication. A response is
+provided (in a later clock tick) indicaing a number of bytes
+consumed. If the last byte is consumed then the script will
+complete.
+
+Tied to the APB master transactions is the return data from APB reads;
+this also includes the state of the script - idle, running,
+completing, errored, poll_failed. Errored is used if the bytes
+provided do not supply enough data for an operation and they are the
+last bytes.
+
+The module presents a registered APB request interface out, and
+accepts an APB response back, including @a pready.
+
+Internally the APB state has an APB select and address registers, plus
+poll count and poll delay
+
+There are basically four opcodes: Set, Poll, Read, Write. All
+instructions are an opcode byte and an 'address' byte
+
+Write commands have additional data bytes    
+
+* Set can set the Select, Address, Poll delay, or Poll count
+  registers. There is no resultant data.
+
+* Poll does an APB read and tests a specified bit for either Set or
+  Clear.
+
+  A resultant data is the poll count if successful, or zero if
+  not. On failure the transactions abort.
+
+* Read does an APB read of 8/16/32 of an address, with optional
+  increment. Resultant data is pushed.
+
+* Write does an APB read of 8/16/32 of an address, with optional
+  increment. Following data bytes are used for write data.
+
+    
+The codes are:
+00_00_00_01 -> Set address [8;8]
+00_00_00_10 -> Set address [8;16]
+00_00_00_11 -> Set address [8;24]
+00_00_10_xx -> Set poll delay
+00_00_11_xx -> Set poll count (8 bits nonzero)
+01_0_BBBBB  -> Poll bit B clear A8
+01_1_BBBBB  -> Poll bit B set A8
+10_0_NNN_SS -> Read N (Size) A8
+10_1_NNN_SS -> Read Inc N (Size) A8
+11_0_NNN_SS -> Write N (Size) A8 DN
+11_1_NNN_SS -> Write Inc N (Size) A8 DN
+
+SS is 00 for byte, 01 for 16-bit, else 32-bit
+
+Example of using an APB target SRAM:
+
+    02 02 : Set address to be 0x00020000
+    c1 00 30 12 : Write address 0x2000 data 0x1230 (Sram address 0x1230)
+    ca 04 ef be ad de 0d f0 fe ca : Write address 0x2004 data 0xdeadbeef then 0xcafefood
+
+Example of using an APB target minimal UART:
+
+    02 04 : Set address to be 0x00040000
+    70 00 : Poll once address 0x4000 bit 16 to be set (rx is valid)
+    80 03 : Read holding register byte 0x4003 (Uart rx data)
+
+                                           
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    clocked t_apb_request      apb_request={*=0} "APB request being presented, driving the output port";
+
+    comb t_apb_combs           apb_combs                                            "Combinatorial decode of APB state and APB response";
+    clocked t_apb_state        apb_state={*=0, fsm_state=apb_fsm_idle}              "APB state, including FSM";
+
+    comb t_script_if_action script_if_action;
+    clocked t_script_if_state script_if_state = {*=0};
+
+    comb t_script_combs           script_combs       "Combinatorial decode of ROM state";
+    clocked t_script_state        script_state={*=0}                                      "State of the ROM-side; request and ROM access";
+
+    /*b Script interface logic */
+    script_interface_logic """
+    Start a script (go @a busy) when a start or start_clear op comes in.
+    Start the script state machine (with optional clear).
+
+    Then register data if provided, with a 'last' indication; provide this to
+    the script state machine.
+    Drive out the number of bytes consumed by the state machine, when used, and
+    in the next tycle provide no data to the script state machine.
+
+    """: {
+        /*b Handle the state of the request/ack */
+        script_if_action = script_if_action_none;
+        if (script_if_state.busy) {
+            script_if_action = script_if_action_data;
+            if (script_combs.completed) {
+                script_if_state.busy <= 0;
+                script_if_state.completed <= 1;
+                script_if_state.resp <= asm_resp_completed;
+                if (script_combs.poll_failed) {
+                    script_if_state.resp <= asm_resp_poll_failed;
+                }
+                if (script_combs.errored) {
+                    script_if_state.resp <= asm_resp_errored;
+                }
+            }
+            if ((apb_script_req.op == asm_op_data) || (apb_script_req.op == asm_op_data_last)) {
+                script_if_state.data <= apb_script_req.data;
+                script_if_state.num_data_valid <= apb_script_req.num_data_valid;
+                if (apb_script_req.num_data_valid == 7) {
+                    script_if_state.num_data_valid <= 6;
+                }
+                script_if_state.data_is_last <= (apb_script_req.op == asm_op_data_last);
+            }
+            if (script_combs.bytes_consumed>0) {
+                script_if_state.num_data_valid <= 0;
+                script_if_state.data_is_last <= 0;
+            }
+        } elsif (script_if_state.completed) {
+            script_if_state.completed <= 0;
+        } else {
+            if (apb_script_req.op == asm_op_start) {
+                script_if_action = script_if_action_start;
+                script_if_state.busy <= 1;
+                script_if_state.num_data_valid <= 0;
+                script_if_state.data_is_last <= 0;
+            } elsif (apb_script_req.op == asm_op_start_clear) {
+                script_if_action = script_if_action_start_clear;
+                script_if_state.busy <= 1;
+                script_if_state.num_data_valid <= 0;
+                script_if_state.data_is_last <= 0;
+            }
+        }
+
+        /*b Drive outputs */
+        apb_script_resp.resp_type = asm_resp_idle;
+        if (script_if_state.completed) {
+            apb_script_resp.resp_type = script_if_state.resp;
+        }
+        if (script_if_state.busy) {
+            apb_script_resp.resp_type = asm_resp_running;
+        }
+        apb_script_resp.bytes_consumed = script_combs.bytes_consumed;
+        apb_script_resp.bytes_valid = script_state.bytes_valid;
+        apb_script_resp.data        = script_state.data;
+
+        /*b All done */
+    }
+
+    /*b Script execute logic */
+    script_execute_logic """
+    Break out the script interface data.
+
+    From the script FSM state, determine the action to take. The
+    script will be in 'idle' if it is ready to start processing of
+    the ROM opcode being presented. Hence most actions are just a
+    decode, when in idle, of the incoming opcode class. However, if
+    the script FSM is indicating an APB request in process then the
+    script action is pending the APB request; if the script is
+    handling a wait delay then either decrement the accumulator or (if
+    it is zero) complete the wait instruction.
+
+    Handling the script action is the essence of executing the
+    opcode classes, generally; most will complete the opcode execution
+    and return the script FSM to idle. A pending APB request will
+    need to wait for the APB state machine to complete, and it may
+    (for APB reads) capture the APB @a prdata in the accumulator. A
+    wait start will cause the delay to be written to the accumulator,
+    and wait steps are then to decrement the accumulator or simply
+    complete (if the accumulator is zero). A branch will complete,
+    while indicating to the ROM state machine to take the branch if
+    necessary.
+    """: {
+        /*b Breakout the state for decode into action */
+        script_combs.opcode     = script_if_state.data[8;0];
+        script_combs.arg        = script_if_state.data[8;8];
+        script_combs.num_data_valid  = script_if_state.num_data_valid;
+        script_combs.apb_address  = bundle(script_state.address[24;8],
+                                           script_combs.arg);
+
+        script_combs.opcode_class     = script_combs.opcode[2;6];
+        script_combs.opcode_param     = script_combs.opcode[2;2];
+        script_combs.opcode_data_size = script_combs.opcode[2;0];
+        script_combs.opcode_byte_sel  = script_combs.opcode[2;0];
+        script_combs.opcode_bit_sel   = script_combs.opcode[5;0];
+        script_combs.opcode_poll_type = script_combs.opcode[6];
+
+        script_combs.bytes_required = 0;
+
+        script_combs.polled_data_bit = apb_response.prdata & script_state.data;
+        script_combs.polled_bit_mismatch = script_state.poll_type ^ (script_combs.polled_data_bit != 0);
+
+        script_combs.completed = 0;
+        script_combs.poll_failed = 0;
+        script_combs.errored = 0;
+
+        script_combs.req_data   = script_if_state.data[32;16];
+        if (script_combs.opcode_data_size==2b00) {
+            script_combs.req_data[24;8] = 0;
+        }
+        if (script_combs.opcode_data_size==2b01) {
+            script_combs.req_data[16;16] = 0;
+        }
+
+        /*b Determine script action */
+        script_combs.action = script_action_none;
+        full_switch (script_combs.opcode_class) {
+            case opcode_class_set_parameter: { // address, poll delay, poll count
+                script_combs.action = script_action_set_address;
+                if (script_combs.opcode_param == 2b10) {
+                    script_combs.action = script_action_set_poll_delay;
+                }
+                if (script_combs.opcode_param == 2b11) {
+                    script_combs.action = script_action_set_poll_count;
+                }
+                script_combs.bytes_required = 2;
+            }
+            case opcode_class_apb_read: {
+                script_combs.action = script_action_start_apb_read;
+                script_combs.bytes_required = 2;
+            }
+            case opcode_class_apb_write: {
+                script_combs.action = script_action_start_apb_write;
+                script_combs.bytes_required = 3;
+                if (script_combs.opcode_data_size==2b01) {
+                    script_combs.bytes_required = 4;
+                }
+                if (script_combs.opcode_data_size[1]) {
+                    script_combs.bytes_required = 6;
+                }
+            }
+            case opcode_class_apb_poll: {
+                script_combs.action = script_action_start_apb_poll;
+                script_combs.bytes_required = 2;
+            }
+        }
+        script_combs.bytes_consumed = 0;
+        script_combs.has_required_bytes = (script_combs.num_data_valid >= script_combs.bytes_required);
+        // Pull out bytes_valid and data from this switch
+        script_state.bytes_valid <= 0;
+
+        full_switch (script_state.fsm_state) {
+        case script_fsm_idle:{
+            script_combs.action = script_action_none;
+            if (script_if_action == script_if_action_start) {
+                script_combs.action = script_action_get_op;
+            }
+            if (script_if_action == script_if_action_start_clear) {
+                script_combs.action = script_action_start_clear;
+            }
+        }
+        case script_fsm_do_instruction: {
+            script_combs.bytes_consumed = script_combs.bytes_required;
+            if (!script_combs.has_required_bytes) {
+                script_combs.action = script_action_none;
+                script_combs.bytes_consumed = 0;
+                if (script_if_state.data_is_last) {
+                    script_combs.completed = 1;
+                    script_combs.errored = 1;
+                    script_combs.action = script_action_complete_errored;
+                }
+            }
+            if (script_if_state.data_is_last && (script_if_state.num_data_valid == 0)) {
+                script_combs.completed = 1;
+                script_combs.errored = 0;
+                script_combs.action = script_action_complete_okay;
+            }
+        }
+        case script_fsm_apb_request: {
+            script_combs.action = script_action_none;
+            if (apb_combs.completing_request) {
+                if (!apb_request.pwrite) {
+                    script_state.data <= apb_response.prdata;
+                    script_state.bytes_valid <= script_state.read_bytes_valid;
+                }
+                script_combs.action = script_action_get_op;
+            }
+        }
+        case script_fsm_apb_request_poll: {
+            script_combs.action = script_action_none;
+             if (apb_combs.completing_request) {
+                script_combs.action = script_action_get_op;
+                if (script_combs.polled_bit_mismatch) {
+                    script_combs.action = script_action_poll_retry_start;
+                    if (script_state.poll_downcount==0) {
+                        script_combs.action = script_action_complete_poll_failed;
+                        script_combs.completed = 1;
+                        script_combs.poll_failed = 1;
+                    }
+                }
+                } 
+        }
+        case script_fsm_poll_delay: {
+            script_combs.action = script_action_poll_wait;
+            if (script_state.delay_downcount==0) {
+                script_combs.action = script_action_poll_wait_completed;
+            }
+        }
+        }
+
+        /*b Handle script action */
+        script_combs.apb_req = {valid=0,
+            read_not_write=0,
+            poll_retry = 0,
+            address = script_combs.apb_address,
+            wdata   = script_combs.req_data};
+
+        full_switch (script_combs.action) {
+        case script_action_start_clear: {
+            script_state.address <= 0;
+            script_state.poll_count <= 16;
+            script_state.poll_delay <= 64;
+            script_state.fsm_state <= script_fsm_do_instruction;
+        }
+        case script_action_get_op: {
+            script_state.fsm_state <= script_fsm_do_instruction;
+        }
+        case script_action_set_address: {
+            if (script_combs.opcode_byte_sel==1) {
+                script_state.address[8;8] <= script_combs.arg;
+            } elsif (script_combs.opcode_byte_sel==2) {
+                script_state.address[8;16] <= script_combs.arg;
+            } elsif (script_combs.opcode_byte_sel==3) {
+                script_state.address[8;24] <= script_combs.arg;
+            }
+        }
+        case script_action_set_poll_delay: {
+            script_state.poll_delay[8;0] <= script_combs.arg;
+        }
+        case script_action_set_poll_count: {
+            script_state.poll_count[8;0] <= script_combs.arg;
+        }
+        case script_action_start_apb_read: {
+            script_combs.apb_req.valid = 1;
+            script_combs.apb_req.read_not_write = 1;
+            script_state.read_bytes_valid <= 3;
+            if (script_combs.opcode_data_size == 2b00) {
+                script_state.read_bytes_valid <= 1;
+            }
+            if (script_combs.opcode_data_size == 2b01) {
+                script_state.read_bytes_valid <= 2;
+            }
+            script_state.fsm_state <= script_fsm_apb_request;
+        }
+        case script_action_start_apb_write: {
+            script_combs.apb_req.valid = 1;
+            script_combs.apb_req.read_not_write = 0;
+            script_state.fsm_state <= script_fsm_apb_request;
+        }
+        case script_action_start_apb_poll: {
+            script_combs.apb_req.valid = 1;
+            script_combs.apb_req.read_not_write = 1;
+            script_state.poll_type <= script_combs.opcode_poll_type;
+            script_state.poll_downcount <= script_state.poll_count;
+            script_state.delay_downcount <= script_state.poll_delay;
+            script_state.data <= (32b1 << script_combs.opcode_bit_sel);
+            script_state.fsm_state <= script_fsm_apb_request_poll;
+        }
+        case script_action_poll_wait_completed: {
+            script_combs.apb_req.valid = 1;
+            script_combs.apb_req.read_not_write = 1;
+            script_combs.apb_req.poll_retry = 1;
+            script_state.fsm_state <= script_fsm_apb_request_poll;
+        }
+        case script_action_poll_retry_start: {
+            script_state.delay_downcount <= script_state.poll_delay;
+            script_state.poll_downcount <= script_state.poll_downcount -1 ;
+            script_state.fsm_state <= script_fsm_poll_delay;
+        }
+        case script_action_poll_wait: {
+            script_state.delay_downcount <= script_state.delay_downcount - 1;
+        }
+        case script_action_complete_okay: {
+            script_state.fsm_state <= script_fsm_idle;
+        }
+        case script_action_complete_poll_failed: {
+            script_state.fsm_state <= script_fsm_idle;
+        }
+        case script_action_complete_errored: {
+            script_state.fsm_state <= script_fsm_idle;
+        }
+        }
+    }
+
+    /*b APB master interface logic */
+    apb_master_logic """
+    The APB master interface accepts a request from the script and
+    drives the signals as required by the APB spec, waiting for pready
+    to complete. It always has at least one dead cycle between
+    presenting APB requests, as it will have to transition from idle,
+    to the select phase, to the enable phase, then back to idle.
+
+    The logic is simple enough - an incoming request (which should
+    only be valid when the APB state machine is idle) causes an APB
+    read or write to start, to the @a paddr and using @pwdata from the script - except for retry of a poll, which is a read of the same address as last time. The request out is
+    registered, and so when the APB FSM is in its select phase, the
+    APB request on the bus has @a psel asserted and @a penable
+    deasserted. In the enable phase of the FSM, the APB request out
+    will have @a psel asserted and @a penable asserted, and be waiting
+    for @a pready to be asserted.
+    """: {
+        apb_combs.completing_request = (apb_state.fsm_state==apb_fsm_enable_phase) &&apb_response.pready;
+
+        apb_combs.action = apb_action_none;
+        full_switch (apb_state.fsm_state) {
+        case apb_fsm_idle: {
+        if (script_combs.apb_req.valid) {
+            apb_combs.action = apb_action_start_apb_request_write;
+            if (script_combs.apb_req.read_not_write) {
+                apb_combs.action = apb_action_start_apb_request_read;
+            }
+            if (script_combs.apb_req.poll_retry) {
+                apb_combs.action = apb_action_start_apb_request_read_again;
+            }
+        }
+        }
+        case apb_fsm_select_phase: {
+            apb_combs.action = apb_action_move_to_enable_phase;
+        }
+        case apb_fsm_enable_phase: {
+            if (apb_response.pready) {
+                apb_combs.action = apb_action_complete;
+            }
+        }
+        }
+
+        full_switch (apb_combs.action) {
+        case apb_action_start_apb_request_write: {
+            apb_state.fsm_state <= apb_fsm_select_phase;
+            apb_request <= { psel = 1,
+                    penable = 0,
+                    pwrite = 1,
+                    paddr = script_combs.apb_req.address,
+                    pwdata = script_combs.apb_req.wdata };
+        }
+        case apb_action_start_apb_request_read: {
+            apb_state.fsm_state <= apb_fsm_select_phase;
+            apb_request <= { psel = 1,
+                    penable = 0,
+                    pwrite = 0,
+                    paddr = script_combs.apb_req.address };
+        }
+        case apb_action_start_apb_request_read_again: {
+            apb_state.fsm_state <= apb_fsm_select_phase;
+            apb_request <= { psel = 1,
+                    penable = 0
+                    };
+        }
+        case apb_action_move_to_enable_phase: {
+            apb_request.penable <= 1;
+            apb_state.fsm_state <= apb_fsm_enable_phase;
+        }
+        case apb_action_complete: {
+            apb_request.psel    <= 0;
+            apb_request.penable <= 0;
+            apb_state.fsm_state <= apb_fsm_idle;
+        }
+        case apb_action_none: {
+            apb_state.fsm_state <= apb_state.fsm_state;
+        }
+        }
+    }
+
+    /*b All done */
+}
