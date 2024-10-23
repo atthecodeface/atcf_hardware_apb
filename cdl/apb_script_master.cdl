@@ -140,7 +140,8 @@ typedef struct {
     bit[8] poll_delay;
     bit[8] poll_count;
     bit poll_type;
-    bit[2] read_bytes_valid "Number of read data bytes that will be valid when data is read";
+    bit repeat_inc "Set if repeated APB operation should use an incremented address";
+    bit[2] data_size "Size of current APB operation (0 for byte, 1 for 16-bit, else 32-bit)";
     bit[2] bytes_valid "Number of read data bytes valid";
     bit[32] data       "Stored read data, one-hot set poll data";
     bit[8] delay_downcount;
@@ -171,6 +172,8 @@ typedef struct {
     bit[5] opcode_bit_sel;
     bit opcode_poll_type;
 
+    bit[2] data_size "Data size from opcode, or for repeat op from state";
+    bit[3] data_size_bytes_required "Number of interface data bytes required given data_size (including opcode, unless repeat)";
     bit[3] bytes_required;
     bit[32] polled_data_bit;
     bit polled_bit_mismatch;
@@ -446,20 +449,34 @@ Example of using an APB target minimal UART:
         script_combs.opcode_bit_sel   = script_combs.opcode[5;0];
         script_combs.opcode_poll_type = script_combs.opcode[6];
 
-        script_combs.bytes_required = 0;
+        script_combs.data_size = script_combs.opcode_data_size;
+        if (script_state.fsm_state==script_fsm_apb_request_wait) {
+            script_combs.data_size = script_state.data_size;
+        }
+        script_combs.data_size_bytes_required = 1;
+        if (script_combs.data_size==2b01) {
+            script_combs.data_size_bytes_required = 2;
+        }
+        if (script_combs.data_size[1]) {
+            script_combs.data_size_bytes_required = 4;
+        }
 
         script_combs.polled_data_bit = apb_response.prdata & script_state.data;
         script_combs.polled_bit_mismatch = script_state.poll_type ^ (script_combs.polled_data_bit != 0);
 
+        script_combs.bytes_required = 0;
         script_combs.completed = 0;
         script_combs.poll_failed = 0;
         script_combs.errored = 0;
 
         script_combs.req_data   = script_if_state.data[32;16];
-        if (script_combs.opcode_data_size==2b00) {
+        if  (script_state.fsm_state==script_fsm_apb_request_wait) {
+            script_combs.req_data   = script_if_state.data[32;0];
+        }
+        if (script_combs.data_size==2b00) {
             script_combs.req_data[24;8] = 0;
         }
-        if (script_combs.opcode_data_size==2b01) {
+        if (script_combs.data_size==2b01) {
             script_combs.req_data[16;16] = 0;
         }
 
@@ -482,19 +499,20 @@ Example of using an APB target minimal UART:
             }
             case opcode_class_apb_write: {
                 script_combs.action = script_action_start_apb_write;
-                script_combs.bytes_required = 3;
-                if (script_combs.opcode_data_size==2b01) {
-                    script_combs.bytes_required = 4;
-                }
-                if (script_combs.opcode_data_size[1]) {
-                    script_combs.bytes_required = 6;
-                }
+                script_combs.bytes_required = script_combs.data_size_bytes_required + 2;
             }
             case opcode_class_apb_poll: {
                 script_combs.action = script_action_start_apb_poll;
                 script_combs.bytes_required = 2;
             }
         }
+        if (script_state.fsm_state==script_fsm_apb_request_wait) {
+            script_combs.bytes_required = 0;
+            if (apb_request.pwrite) {
+                script_combs.bytes_required = script_combs.data_size_bytes_required;
+            }
+        }
+
         script_combs.bytes_consumed = 0;
         script_combs.has_required_bytes = (script_combs.num_data_valid >= script_combs.bytes_required);
         // Pull out bytes_valid and data from this switch
@@ -532,7 +550,13 @@ Example of using an APB target minimal UART:
             if (apb_combs.completing_request) {
                 if (!apb_request.pwrite) {
                     script_state.data <= apb_response.prdata;
-                    script_state.bytes_valid <= script_state.read_bytes_valid;
+                    script_state.bytes_valid <= 3;
+                    if (script_state.data_size == 2b00) {
+                        script_state.bytes_valid <= 1;
+                    }
+                    if (script_state.data_size == 2b01) {
+                        script_state.bytes_valid <= 2;
+                    }
                 }
                 script_combs.action = script_action_get_op;
                 if (script_state.op_downcount!=0) {
@@ -541,7 +565,17 @@ Example of using an APB target minimal UART:
             }
         }
         case script_fsm_apb_request_wait: {
+            script_combs.bytes_consumed = script_combs.bytes_required;
             script_combs.action = script_action_apb_request_repeat;
+            if (!script_combs.has_required_bytes) {
+                script_combs.action = script_action_none;
+                script_combs.bytes_consumed = 0;
+                if (script_if_state.data_is_last) {
+                    script_combs.completed = 1;
+                    script_combs.errored = 1;
+                    script_combs.action = script_action_complete_errored;
+                }
+            }
         }
         case script_fsm_apb_request_poll: {
             script_combs.action = script_action_none;
@@ -572,10 +606,12 @@ Example of using an APB target minimal UART:
             address = script_combs.apb_address,
             wdata   = script_combs.req_data};
         if (script_combs.action==script_action_apb_request_repeat) {
+            // apb_req.valid will be set below if required
             script_combs.apb_req.read_not_write = !apb_request.pwrite;
             script_combs.apb_req.address = apb_request.paddr;
-            script_combs.apb_req.wdata = script_if_state.data[32;0];
-            // Valid will be set below if required
+            if (script_state.repeat_inc) {
+                script_combs.apb_req.address = apb_request.paddr+1;
+            }
         }
 
         full_switch (script_combs.action) {
@@ -606,19 +642,16 @@ Example of using an APB target minimal UART:
         case script_action_start_apb_read: {
             script_combs.apb_req.valid = 1;
             script_combs.apb_req.read_not_write = 1;
-            script_state.read_bytes_valid <= 3;
-            if (script_combs.opcode_data_size == 2b00) {
-                script_state.read_bytes_valid <= 1;
-            }
-            if (script_combs.opcode_data_size == 2b01) {
-                script_state.read_bytes_valid <= 2;
-            }
+            script_state.data_size <= script_combs.opcode_data_size;
+            script_state.repeat_inc <= script_combs.opcode_inc;
             script_state.fsm_state <= script_fsm_apb_request;
             script_state.op_downcount <= bundle(5b0,script_combs.opcode_num_ops);
         }
         case script_action_start_apb_write: {
             script_combs.apb_req.valid = 1;
             script_combs.apb_req.read_not_write = 0;
+            script_state.repeat_inc <= script_combs.opcode_inc;
+            script_state.data_size <= script_combs.opcode_data_size;
             script_state.fsm_state <= script_fsm_apb_request;
             script_state.op_downcount <= bundle(5b0,script_combs.opcode_num_ops);
         }
