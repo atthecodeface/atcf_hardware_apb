@@ -42,6 +42,7 @@ class Script(object):
         "data_size_8": 0,
         "data_size_16": 1,
         "data_size_32": 2,
+        "inc": 32,
         "poll_set": 64,
         }
     #f get_define_int
@@ -72,19 +73,25 @@ class Script(object):
                 addr8&0xff]
     #f op_read
     @classmethod
-    def op_read(cls, addr8, data_size, num=1):
+    def op_read(cls, addr8, data_size, num=1, inc=False):
+        opts = 0
+        if inc: opts = cls.opcode_subclass["inc"]
         return [(cls.opcodes["opcode_class_read"]<<6) |
+                opts |
                 cls.opcode_subclass["data_size_"+str(data_size)] |
                 (((num%8)-1) << 2),
                 addr8&0xff]
     #f op_write
     @classmethod
-    def op_write(cls, addr8, data_size, data=[]):
+    def op_write(cls, addr8, data_size, data=[], inc=False):
+        opts = 0
+        if inc: opts = cls.opcode_subclass["inc"]
         num = len(data)
         if num==0 or num>8:
             return []
         r = []
         r.append( (cls.opcodes["opcode_class_write"]<<6) |
+                  opts |
                   cls.opcode_subclass["data_size_"+str(data_size)] |
                   ((num-1) << 2) )
         r.append(addr8&0xff)

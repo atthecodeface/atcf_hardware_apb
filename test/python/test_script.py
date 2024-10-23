@@ -16,14 +16,13 @@
 #
 
 #a Imports
-import tempfile
+from random import Random
 from regress.apb.structs import t_apb_script_master_request, t_apb_script_master_op
 from regress.apb.structs import t_apb_script_master_response, t_apb_script_master_resp_type
 from regress.apb import Script
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
 from cdl.sim     import TestCase
-from cdl.utils.memory import Memory
 
 from cdl.utils   import csr
 from regress.apb import target_timer, target_gpio, target_sram_interface
@@ -45,6 +44,7 @@ class ApbAddressMap(csr.Map):
 class ScriptMasterTestBase(ThExecFile):
     apb = ApbAddressMap()
     th_name = "APB script_master test harness"
+    random_seed = "some tx random seed"
     #v program
     defines = {"nothing":"value"}
     scripts = {}
@@ -80,30 +80,28 @@ class ScriptMasterTestBase(ThExecFile):
         Script.op_set("addr2",apb.sram.address.Address()>>16),
         Script.op_set("addr3",apb.sram.address.Address()>>24),
         Script.op_write(apb.sram.address.Address(),32,[0]),
-        # Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567, 0x2345678]),
-        Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567]),
-        Script.op_write(apb.sram.data_inc.Address(),32,[0x2345678]),
+        Script.op_write(apb.sram.data_inc.Address(),32,[0x1234567, 0x2345678]),
         Script.op_write(apb.sram.address.Address(),32,[0]),
         Script.op_read(apb.sram.data_inc.Address(),32,2),
         ],"ok",[(-1,0x1234567), (-1,0x2345678)])
-    #program["code"] += [
-    #    (Script.op_set("address",apb.sram.data_inc.Address()),),
-    #    (Script.sop_set("accumulator",0x1234),),
-    #    (Script.op_set("repeat",20),),
-    #    (Script.op_req("write_acc",0),["sram_write_loop:"]),
-    #    (Script.op_alu("add",0x3),),
-    #    (Script.op_branch("loop",0),["sram_write_loop"]),
-    #    (Script.op_set("address",apb.sram.address.Address()),),
-    #    (Script.op_req("write_arg",0),),
-    #    (Script.op_set("address",apb.sram.data_inc.Address()),),
-    #    (Script.op_set("repeat",20),),
-    #    (Script.op_req("read",0),["sram_read_loop:"]),
-    #    (Script.op_branch("loop",0),["sram_read_loop"]),
-    #    (Script.op_alu("xor",0x1234 + 20*3),),
-    #    (Script.op_branch("bne",0),["fail"]),
-    #    (Script.op_finish(),),
-    #    ]
-    scripts_to_run = [ "timer_comparator" ]
+    scripts["sram_long"] = ([
+        Script.op_set("addr1",apb.sram.address.Address()>>8),
+        Script.op_set("addr2",apb.sram.address.Address()>>16),
+        Script.op_set("addr3",apb.sram.address.Address()>>24),
+        Script.op_write(apb.sram.address.Address(),32,[0]),
+        Script.op_write(apb.sram.data_window.Address()+0,32,[0x1, 0x2, 0x3, 0x4, 0x5], True),
+        Script.op_write(apb.sram.data_window.Address()+4,32,[0x1234567, 0x2345678], True),
+        Script.op_write(apb.sram.data_window.Address()+8,32,[0x9, 0xa, 0xb], True),
+        Script.op_read(apb.sram.data_window.Address()+4,32,2,True),        
+        Script.op_read(apb.sram.data_window.Address()+1,32,4,True),        
+        ],"ok",[(-1,0x1234567),
+                (-1,0x2345678),
+                (-1,2),
+                (-1,3),
+                (-1,4),
+                (-1,0x1234567),
+                ])
+    scripts_to_run = list(scripts.keys())
     #f invoke_script
     def invoke_script(self, script_name):
         script_to_run = self.compiled_scripts[script_name]
@@ -119,6 +117,7 @@ class ScriptMasterTestBase(ThExecFile):
         completion = "ok"
         data_returned = []
         cycles_to_run = 1000
+        do_idle_cnt = self.inter_data_idle_cycles()
         while cycles_to_run > 0:
             bv = self.apb_script_resp__bytes_valid.value()
             data = self.apb_script_resp__data.value()
@@ -132,6 +131,16 @@ class ScriptMasterTestBase(ThExecFile):
                 if len(bytes_to_run)>0:
                     bytes_to_run.pop(0)
                     pass
+                do_idle_cnt = self.inter_data_idle_cycles()
+                pass
+
+            if do_idle_cnt > 0:
+                self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_idle"] )
+                self.apb_script_req__data.drive(0xdeadbeef)
+                self.apb_script_req__num_data_valid.drive(do_idle_cnt&7)
+                self.bfm_wait(1)
+                do_idle_cnt -= 1
+                continue
                 pass
 
             n = len(bytes_to_run)
@@ -179,8 +188,13 @@ class ScriptMasterTestBase(ThExecFile):
             pass
         self.bfm_wait(3)
         pass
+    #f inter_data_idle_cycles
+    def inter_data_idle_cycles(self) -> int:
+        return 0
     #f run_init
     def run__init(self) -> None:
+        self.random = Random()
+        self.random.seed(self.random_seed)
         self.bfm_wait(2)
         self.compiled_scripts = {}
         for (n,s) in self.scripts.items():
@@ -202,13 +216,40 @@ class ScriptMasterTestBase(ThExecFile):
 
 #c ScriptMasterTest0
 class ScriptMasterTest0(ScriptMasterTestBase):
-    scripts_to_run = [  # "timer_comparator",
-                        # "gpio_rw",
+    scripts_to_run = [  "timer_comparator",
+                        "gpio_rw",
                         "sram",
-                        # "sram_gpio",
-                        # "none",
-                        #prog_sram_gpio",
-                        #"prog_sram",
+                        "sram_gpio",
+                        "sram_long",
+                        "none",
+    ]
+    pass
+
+#c ScriptMasterTest1
+class ScriptMasterTest1(ScriptMasterTestBase):
+    #f inter_data_idle_cycles
+    def inter_data_idle_cycles(self) -> int:
+        return 8
+    scripts_to_run = [  "timer_comparator",
+                        "gpio_rw",
+                        "sram",
+                        "sram_gpio",
+                        "sram_long",
+                        "none",
+    ]
+    pass
+
+#c ScriptMasterTest2
+class ScriptMasterTest2(ScriptMasterTestBase):
+    #f inter_data_idle_cycles
+    def inter_data_idle_cycles(self) -> int:
+        return self.random.randrange(10)
+    scripts_to_run = [  "timer_comparator",
+                        "gpio_rw",
+                        "sram",
+                        "sram_gpio",
+                        "sram_long",
+                        "none",
     ]
     pass
 
@@ -233,7 +274,10 @@ class ApbScriptMasterHardware(HardwareThDut):
 #c TestApbScriptMaster
 class TestApbScriptMaster(TestCase):
     hw = ApbScriptMasterHardware
-    _tests = {"smoke": (ScriptMasterTest0, 100*1000, {"verbosity":0}),
+    _tests = {"fast": (ScriptMasterTest0, 100*1000, {"verbosity":0}),
+              "slow": (ScriptMasterTest1, 100*1000, {"verbosity":0}),
+              "random": (ScriptMasterTest2, 100*1000, {"verbosity":0}),
+              "smoke": (ScriptMasterTest2, 100*1000, {"verbosity":0}),
               }
     pass
 
