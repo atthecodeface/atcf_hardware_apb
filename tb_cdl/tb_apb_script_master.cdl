@@ -27,14 +27,14 @@ include "apb_masters.h"
 /*a Module */
 module tb_apb_script_master( clock clk,
                          input bit reset_n,
-                             input t_apb_script_master_request  apb_script_req,
-                             output t_apb_script_master_response  apb_script_resp,
+                             input t_dbg_master_request  dbg_master_req,
+                             output t_dbg_master_response  dbg_master_resp,
                          output bit[3] timer_equalled
 )
 {
 
     /*b Nets */
-    net t_apb_script_master_response  apb_script_resp;
+    net t_dbg_master_response  dbg_master_resp;
     net t_apb_request             apb_request;
     net bit[32]                   test_ram_data;
     net t_apb_response timer_apb_response;
@@ -61,8 +61,8 @@ module tb_apb_script_master( clock clk,
         apb_script_master dut( clk <- clk,
                        reset_n <= reset_n,
 
-                       apb_script_req <= apb_script_req,
-                       apb_script_resp => apb_script_resp,
+                       dbg_master_req <= dbg_master_req,
+                       dbg_master_resp => dbg_master_resp,
                        apb_request => apb_request,
                        apb_response  <= apb_response );
 

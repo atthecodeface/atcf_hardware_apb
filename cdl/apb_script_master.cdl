@@ -19,6 +19,7 @@
  *
  */
 /*a Includes */
+include "utils::debug.h"
 include "apb.h"
 
 /*a Types */
@@ -142,7 +143,7 @@ typedef struct {
     bit poll_type;
     bit repeat_inc "Set if repeated APB operation should use an incremented address";
     bit[2] data_size "Size of current APB operation (0 for byte, 1 for 16-bit, else 32-bit)";
-    bit[2] bytes_valid "Number of read data bytes valid";
+    bit[3] bytes_valid "Number of read data bytes valid";
     bit[32] data       "Stored read data, one-hot set poll data";
     bit[8] delay_downcount;
     bit[8] op_downcount;
@@ -238,8 +239,8 @@ typedef struct {
 /*a Module */
 module apb_script_master( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
                       input bit                reset_n    "Active low reset",
-                      input t_apb_script_master_request    apb_script_req  "Request from the client to execute from an address in the ROM",
-                      output t_apb_script_master_response  apb_script_resp "Response to the client acknowledging a request",
+                      input t_dbg_master_request    dbg_master_req  "Request from the client to execute from an address in the ROM",
+                      output t_dbg_master_response  dbg_master_resp "Response to the client acknowledging a request",
                       output t_apb_request     apb_request   "Pipelined csr request interface output",
                       input t_apb_response     apb_response  "Pipelined csr request interface response"
     )
@@ -366,13 +367,13 @@ Example of using an APB target minimal UART:
                     script_if_state.resp <= asm_resp_errored;
                 }
             }
-            if ((apb_script_req.op == asm_op_data) || (apb_script_req.op == asm_op_data_last)) {
-                script_if_state.data <= apb_script_req.data;
-                script_if_state.num_data_valid <= apb_script_req.num_data_valid;
-                if (apb_script_req.num_data_valid == 7) {
+            if ((dbg_master_req.op == asm_op_data) || (dbg_master_req.op == asm_op_data_last)) {
+                script_if_state.data <= dbg_master_req.data[48;0];
+                script_if_state.num_data_valid <= dbg_master_req.num_data_valid[3;0];
+                if (dbg_master_req.num_data_valid >= 7) {
                     script_if_state.num_data_valid <= 6;
                 }
-                script_if_state.data_is_last <= (apb_script_req.op == asm_op_data_last);
+                script_if_state.data_is_last <= (dbg_master_req.op == asm_op_data_last);
             }
             if (script_combs.bytes_consumed>0) {
                 script_if_state.num_data_valid <= 0;
@@ -381,12 +382,12 @@ Example of using an APB target minimal UART:
         } elsif (script_if_state.completed) {
             script_if_state.completed <= 0;
         } else {
-            if (apb_script_req.op == asm_op_start) {
+            if (dbg_master_req.op == asm_op_start) {
                 script_if_action = script_if_action_start;
                 script_if_state.busy <= 1;
                 script_if_state.num_data_valid <= 0;
                 script_if_state.data_is_last <= 0;
-            } elsif (apb_script_req.op == asm_op_start_clear) {
+            } elsif (dbg_master_req.op == asm_op_start_clear) {
                 script_if_action = script_if_action_start_clear;
                 script_if_state.busy <= 1;
                 script_if_state.num_data_valid <= 0;
@@ -395,16 +396,16 @@ Example of using an APB target minimal UART:
         }
 
         /*b Drive outputs */
-        apb_script_resp.resp_type = asm_resp_idle;
+        dbg_master_resp.resp_type = asm_resp_idle;
         if (script_if_state.completed) {
-            apb_script_resp.resp_type = script_if_state.resp;
+            dbg_master_resp.resp_type = script_if_state.resp;
         }
         if (script_if_state.busy) {
-            apb_script_resp.resp_type = asm_resp_running;
+            dbg_master_resp.resp_type = asm_resp_running;
         }
-        apb_script_resp.bytes_consumed = script_combs.bytes_consumed;
-        apb_script_resp.bytes_valid = script_state.bytes_valid;
-        apb_script_resp.data        = script_state.data;
+        dbg_master_resp.bytes_consumed = bundle(1b0, script_combs.bytes_consumed);
+        dbg_master_resp.bytes_valid = script_state.bytes_valid;
+        dbg_master_resp.data        = script_state.data;
 
         /*b All done */
     }
@@ -550,7 +551,7 @@ Example of using an APB target minimal UART:
             if (apb_combs.completing_request) {
                 if (!apb_request.pwrite) {
                     script_state.data <= apb_response.prdata;
-                    script_state.bytes_valid <= 3;
+                    script_state.bytes_valid <= 4;
                     if (script_state.data_size == 2b00) {
                         script_state.bytes_valid <= 1;
                     }
