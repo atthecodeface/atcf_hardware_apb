@@ -79,7 +79,7 @@ class Script(object):
         return [(cls.opcodes["opcode_class_read"]<<6) |
                 opts |
                 cls.opcode_subclass["data_size_"+str(data_size)] |
-                (((num%8)-1) << 2),
+                (((num-1)%8) << 2),
                 addr8&0xff]
     #f op_write
     @classmethod
