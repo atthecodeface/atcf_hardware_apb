@@ -68,7 +68,7 @@ typedef enum[2] {
 typedef struct {
     bit busy;
     bit completed;
-    t_apb_script_master_resp_type resp;
+    t_dbg_master_resp_type resp;
     bit data_is_last;
     bit[48] data;
     bit[3] num_data_valid;
@@ -359,21 +359,21 @@ Example of using an APB target minimal UART:
             if (script_combs.completed) {
                 script_if_state.busy <= 0;
                 script_if_state.completed <= 1;
-                script_if_state.resp <= asm_resp_completed;
+                script_if_state.resp <= dbg_resp_completed;
                 if (script_combs.poll_failed) {
-                    script_if_state.resp <= asm_resp_poll_failed;
+                    script_if_state.resp <= dbg_resp_poll_failed;
                 }
                 if (script_combs.errored) {
-                    script_if_state.resp <= asm_resp_errored;
+                    script_if_state.resp <= dbg_resp_errored;
                 }
             }
-            if ((dbg_master_req.op == asm_op_data) || (dbg_master_req.op == asm_op_data_last)) {
+            if ((dbg_master_req.op == dbg_op_data) || (dbg_master_req.op == dbg_op_data_last)) {
                 script_if_state.data <= dbg_master_req.data[48;0];
                 script_if_state.num_data_valid <= dbg_master_req.num_data_valid[3;0];
                 if (dbg_master_req.num_data_valid >= 7) {
                     script_if_state.num_data_valid <= 6;
                 }
-                script_if_state.data_is_last <= (dbg_master_req.op == asm_op_data_last);
+                script_if_state.data_is_last <= (dbg_master_req.op == dbg_op_data_last);
             }
             if (script_combs.bytes_consumed>0) {
                 script_if_state.num_data_valid <= 0;
@@ -382,12 +382,12 @@ Example of using an APB target minimal UART:
         } elsif (script_if_state.completed) {
             script_if_state.completed <= 0;
         } else {
-            if (dbg_master_req.op == asm_op_start) {
+            if (dbg_master_req.op == dbg_op_start) {
                 script_if_action = script_if_action_start;
                 script_if_state.busy <= 1;
                 script_if_state.num_data_valid <= 0;
                 script_if_state.data_is_last <= 0;
-            } elsif (dbg_master_req.op == asm_op_start_clear) {
+            } elsif (dbg_master_req.op == dbg_op_start_clear) {
                 script_if_action = script_if_action_start_clear;
                 script_if_state.busy <= 1;
                 script_if_state.num_data_valid <= 0;
@@ -396,12 +396,12 @@ Example of using an APB target minimal UART:
         }
 
         /*b Drive outputs */
-        dbg_master_resp.resp_type = asm_resp_idle;
+        dbg_master_resp.resp_type = dbg_resp_idle;
         if (script_if_state.completed) {
             dbg_master_resp.resp_type = script_if_state.resp;
         }
         if (script_if_state.busy) {
-            dbg_master_resp.resp_type = asm_resp_running;
+            dbg_master_resp.resp_type = dbg_resp_running;
         }
         dbg_master_resp.bytes_consumed = bundle(1b0, script_combs.bytes_consumed);
         dbg_master_resp.bytes_valid = script_state.bytes_valid;

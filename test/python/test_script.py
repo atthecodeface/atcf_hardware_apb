@@ -17,8 +17,8 @@
 
 #a Imports
 from random import Random
-from regress.apb.structs import t_apb_script_master_request, t_apb_script_master_op
-from regress.apb.structs import t_apb_script_master_response, t_apb_script_master_resp_type
+from regress.utils import t_dbg_master_request, t_dbg_master_op
+from regress.utils import t_dbg_master_response, t_dbg_master_resp_type
 from regress.apb import Script
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
@@ -107,26 +107,27 @@ class ScriptMasterTestBase(ThExecFile):
         script_to_run = self.compiled_scripts[script_name]
         bytes_to_run = bytearray(script_to_run[0].as_bytes())
         self.compare_expected("script master should start idle",
-                              self.apb_script_resp__resp_type.value(), t_apb_script_master_resp_type["asm_resp_idle"] )
+                              self.dbg_master_resp__resp_type.value(), t_dbg_master_resp_type["dbg_resp_idle"] )
 
-        self.apb_script_req__num_data_valid.drive(0)
-        self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_start_clear"] )
+        self.dbg_master_req__num_data_valid.drive(0)
+        self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_start_clear"] )
         self.bfm_wait(1)
-        self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_idle"] )
+        self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_idle"] )
         self.bfm_wait(1)
         completion = "ok"
         data_returned = []
         cycles_to_run = 1000
         do_idle_cnt = self.inter_data_idle_cycles()
         while cycles_to_run > 0:
-            bv = self.apb_script_resp__bytes_valid.value()
-            data = self.apb_script_resp__data.value()
+            bv = self.dbg_master_resp__bytes_valid.value()
+            data = self.dbg_master_resp__data.value()
             if bv == 1: data_returned.append(data&0xff)
             if bv == 2: data_returned.append(data&0xffff)
-            if bv == 3: data_returned.append(data&0xffffffff)
-            if self.apb_script_resp__resp_type.value() != t_apb_script_master_resp_type["asm_resp_running"]:
+            if bv == 3: data_returned.append(data&0xffffff)
+            if bv == 4: data_returned.append(data&0xffffffff)
+            if self.dbg_master_resp__resp_type.value() != t_dbg_master_resp_type["dbg_resp_running"]:
                 break
-            bytes_consumed = self.apb_script_resp__bytes_consumed.value()
+            bytes_consumed = self.dbg_master_resp__bytes_consumed.value()
             for i in range(bytes_consumed):
                 if len(bytes_to_run)>0:
                     bytes_to_run.pop(0)
@@ -135,18 +136,18 @@ class ScriptMasterTestBase(ThExecFile):
                 pass
 
             if do_idle_cnt > 0:
-                self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_idle"] )
-                self.apb_script_req__data.drive(0xdeadbeef)
-                self.apb_script_req__num_data_valid.drive(do_idle_cnt&7)
+                self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_idle"] )
+                self.dbg_master_req__data.drive(0xdeadbeef)
+                self.dbg_master_req__num_data_valid.drive(do_idle_cnt&7)
                 self.bfm_wait(1)
                 do_idle_cnt -= 1
                 continue
                 pass
 
             n = len(bytes_to_run)
-            self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_data"] )
+            self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_data"] )
             if n<=6:
-                self.apb_script_req__op.drive(t_apb_script_master_op["asm_op_data_last"] )
+                self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_data_last"] )
                 pass
             else:
                 n = 6
@@ -155,19 +156,19 @@ class ScriptMasterTestBase(ThExecFile):
             for i in range(n):
                 data = data | (bytes_to_run[i] << (8*i))
                 pass
-            self.apb_script_req__data.drive(data)
-            self.apb_script_req__num_data_valid.drive(n)
+            self.dbg_master_req__data.drive(data)
+            self.dbg_master_req__num_data_valid.drive(n)
             self.bfm_wait(1)
             cycles_to_run -= 1
             pass
         completion = "unexpected"
-        if self.apb_script_resp__resp_type.value() == t_apb_script_master_resp_type["asm_resp_completed"]:
+        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_completed"]:
             completion = "ok"
             pass
-        if self.apb_script_resp__resp_type.value() == t_apb_script_master_resp_type["asm_resp_errored"]:
+        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_errored"]:
             completion = "errored"
             pass
-        if self.apb_script_resp__resp_type.value() == t_apb_script_master_resp_type["asm_resp_poll_failed"]:
+        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_poll_failed"]:
             completion = "poll_failed"
             pass
         if completion != script_to_run[1]:
@@ -258,9 +259,9 @@ class ApbScriptMasterHardware(HardwareThDut):
     clock_desc = [("clk",(0,1,1))]
     reset_desc = {"name":"reset_n", "init_value":0, "wait":5}
     module_name = "tb_apb_script_master"
-    dut_inputs  = {"apb_script_req":t_apb_script_master_request,
+    dut_inputs  = {"dbg_master_req":t_dbg_master_request,
     }
-    dut_outputs = {"apb_script_resp":t_apb_script_master_response,
+    dut_outputs = {"dbg_master_resp":t_dbg_master_response,
                    "timer_equalled":3
     }
     loggers = { # "apb":{"modules":"dut dut.apb_log", "verbose":1},
