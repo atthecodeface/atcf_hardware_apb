@@ -688,12 +688,18 @@ Example of using an APB target minimal UART:
             script_state.delay_downcount <= script_state.delay_downcount - 1;
         }
         case script_action_complete_okay: {
+            script_state.bytes_valid <= 0;
+            script_state.data <= 0;
             script_state.fsm_state <= script_fsm_idle;
         }
         case script_action_complete_poll_failed: {
+            script_state.bytes_valid <= 0;
+            script_state.data <= 0;
             script_state.fsm_state <= script_fsm_idle;
         }
         case script_action_complete_errored: {
+            script_state.bytes_valid <= 0;
+            script_state.data <= 0;
             script_state.fsm_state <= script_fsm_idle;
         }
         }

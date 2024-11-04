@@ -19,6 +19,7 @@
 from random import Random
 from regress.utils import t_dbg_master_request, t_dbg_master_op
 from regress.utils import t_dbg_master_response, t_dbg_master_resp_type
+from regress.utils import DbgMaster
 from regress.apb import Script
 from cdl.sim     import ThExecFile
 from cdl.sim     import HardwareThDut
@@ -106,71 +107,13 @@ class ScriptMasterTestBase(ThExecFile):
     def invoke_script(self, script_name):
         script_to_run = self.compiled_scripts[script_name]
         bytes_to_run = bytearray(script_to_run[0].as_bytes())
-        self.compare_expected("script master should start idle",
-                              self.dbg_master_resp__resp_type.value(), t_dbg_master_resp_type["dbg_resp_idle"] )
 
-        self.dbg_master_req__num_data_valid.drive(0)
-        self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_start_clear"] )
-        self.bfm_wait(1)
-        self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_idle"] )
-        self.bfm_wait(1)
-        completion = "ok"
-        data_returned = []
-        cycles_to_run = 1000
-        do_idle_cnt = self.inter_data_idle_cycles()
-        while cycles_to_run > 0:
-            bv = self.dbg_master_resp__bytes_valid.value()
-            data = self.dbg_master_resp__data.value()
-            if bv == 1: data_returned.append(data&0xff)
-            if bv == 2: data_returned.append(data&0xffff)
-            if bv == 3: data_returned.append(data&0xffffff)
-            if bv == 4: data_returned.append(data&0xffffffff)
-            if self.dbg_master_resp__resp_type.value() != t_dbg_master_resp_type["dbg_resp_running"]:
-                break
-            bytes_consumed = self.dbg_master_resp__bytes_consumed.value()
-            for i in range(bytes_consumed):
-                if len(bytes_to_run)>0:
-                    bytes_to_run.pop(0)
-                    pass
-                do_idle_cnt = self.inter_data_idle_cycles()
-                pass
+        (completion, data_returned) = self.dbg_master.invoke_script_bytes(
+            bytes_to_run,
+            self.bfm_wait,
+            self.inter_data_idle_cycles,
+            1000)
 
-            if do_idle_cnt > 0:
-                self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_idle"] )
-                self.dbg_master_req__data.drive(0xdeadbeef)
-                self.dbg_master_req__num_data_valid.drive(do_idle_cnt&7)
-                self.bfm_wait(1)
-                do_idle_cnt -= 1
-                continue
-                pass
-
-            n = len(bytes_to_run)
-            self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_data"] )
-            if n<=6:
-                self.dbg_master_req__op.drive(t_dbg_master_op["dbg_op_data_last"] )
-                pass
-            else:
-                n = 6
-                pass
-            data = 0
-            for i in range(n):
-                data = data | (bytes_to_run[i] << (8*i))
-                pass
-            self.dbg_master_req__data.drive(data)
-            self.dbg_master_req__num_data_valid.drive(n)
-            self.bfm_wait(1)
-            cycles_to_run -= 1
-            pass
-        completion = "unexpected"
-        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_completed"]:
-            completion = "ok"
-            pass
-        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_errored"]:
-            completion = "errored"
-            pass
-        if self.dbg_master_resp__resp_type.value() == t_dbg_master_resp_type["dbg_resp_poll_failed"]:
-            completion = "poll_failed"
-            pass
         if completion != script_to_run[1]:
             self.failtest("Completion that occured (%s) was not what was expected (%s)"%(completion, script_to_run[1]))
             pass
@@ -197,6 +140,7 @@ class ScriptMasterTestBase(ThExecFile):
         self.random = Random()
         self.random.seed(self.random_seed)
         self.bfm_wait(2)
+        self.dbg_master = DbgMaster(self, "dbg_master_req", "dbg_master_resp")
         self.compiled_scripts = {}
         for (n,s) in self.scripts.items():
             self.verbose.info("Compile script %s"%n)
