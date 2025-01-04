@@ -1,0 +1,159 @@
+[*]
+[*] GTKWave Analyzer v3.4.0 (w)1999-2022 BSI
+[*] Wed Oct 23 10:06:20 2024
+[*]
+[dumpfile] "/Users/gavinjstark/Git/atcf_hardware/atcf_hardware_riscv_grip/atcf_hardware_apb/test/waves.vcd"
+[dumpfile_mtime] "Wed Oct 23 10:03:23 2024"
+[dumpfile_size] 2194352
+[savefile] "/Users/gavinjstark/Git/atcf_hardware/atcf_hardware_riscv_grip/atcf_hardware_apb/test/apb_script.gtkw"
+[timestart] 20
+[size] 1624 851
+[pos] -1 -1
+*-4.000000 60 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+[markername] AA
+[markername] BB
+[markername] CC
+[markername] DD
+[markername] EE
+[markername] FF
+[markername] GG
+[markername] HH
+[markername] II
+[markername] JJ
+[markername] KK
+[markername] LL
+[markername] MM
+[markername] NN
+[markername] OO
+[markername] PP
+[markername] QQ
+[markername] RR
+[markername] SS
+[markername] TT
+[markername] UU
+[markername] VV
+[markername] WW
+[markername] XX
+[markername] YY
+[markername] ZZ
+[treeopen] dut.
+[sst_width] 253
+[signals_width] 333
+[sst_expanded] 1
+[sst_vpaned_height] 247
+@28
+dut.dut.apb_combs__action[2:0]
+dut.dut.apb_combs__completing_request
+@200
+-
+@22
+dut.dut.apb_request__paddr[31:0]
+@28
+dut.dut.apb_request__penable
+dut.dut.apb_request__psel
+@22
+dut.dut.apb_request__pwdata[31:0]
+@28
+dut.dut.apb_request__pwrite
+@200
+-
+@28
+dut.dut.apb_response__perr
+@22
+dut.dut.apb_response__prdata[31:0]
+@28
+dut.dut.apb_response__pready
+@200
+-
+@22
+dut.dut.apb_script_req__data[47:0]
+@28
+dut.dut.apb_script_req__num_data_valid[2:0]
+dut.dut.apb_script_req__op[2:0]
+@200
+-
+@28
+dut.dut.apb_script_resp__bytes_consumed[2:0]
+dut.dut.apb_script_resp__bytes_valid[1:0]
+@22
+dut.dut.apb_script_resp__data[31:0]
+@28
+dut.dut.apb_script_resp__resp_type[2:0]
+@200
+-
+@28
+dut.dut.script_if_action[1:0]
+dut.dut.script_if_state__busy
+@200
+-
+@28
+dut.dut.script_if_state__completed
+@22
+dut.dut.script_if_state__data[47:0]
+@28
+dut.dut.script_if_state__data_is_last
+dut.dut.script_if_state__num_data_valid[2:0]
+dut.dut.script_if_state__resp[2:0]
+@200
+-
+@28
+dut.dut.apb_state__fsm_state[1:0]
+dut.dut.reset_n
+@22
+dut.dut.script_combs__apb_address[31:0]
+dut.dut.script_combs__apb_req__address[31:0]
+@28
+dut.dut.script_combs__apb_req__poll_retry
+dut.dut.script_combs__apb_req__read_not_write
+dut.dut.script_combs__apb_req__valid
+@22
+dut.dut.script_combs__apb_req__wdata[31:0]
+dut.dut.script_combs__arg[7:0]
+@28
+dut.dut.script_combs__bytes_consumed[2:0]
+dut.dut.script_combs__bytes_required[2:0]
+dut.dut.script_combs__completed
+dut.dut.script_combs__errored
+dut.dut.script_combs__has_required_bytes
+dut.dut.script_combs__num_data_valid[2:0]
+@200
+-
+@23
+dut.dut.script_combs__opcode[7:0]
+dut.dut.script_combs__opcode_bit_sel[4:0]
+@29
+dut.dut.script_combs__opcode_byte_sel[1:0]
+dut.dut.script_combs__opcode_class[1:0]
+dut.dut.script_combs__opcode_data_size[1:0]
+dut.dut.script_combs__opcode_inc
+dut.dut.script_combs__opcode_num_ops[2:0]
+dut.dut.script_combs__opcode_param[1:0]
+dut.dut.script_combs__opcode_poll_type
+@200
+-
+@28
+dut.dut.script_combs__poll_failed
+dut.dut.script_combs__polled_bit_mismatch
+@22
+dut.dut.script_combs__polled_data_bit[31:0]
+dut.dut.script_combs__req_data[31:0]
+@200
+-
+@22
+dut.dut.script_state__address[31:0]
+@28
+dut.dut.script_state__bytes_valid[1:0]
+@22
+dut.dut.script_state__data[31:0]
+dut.dut.script_state__delay_downcount[7:0]
+@28
+dut.dut.script_state__fsm_state[2:0]
+@22
+dut.dut.script_state__op_downcount[7:0]
+dut.dut.script_state__poll_count[7:0]
+dut.dut.script_state__poll_delay[7:0]
+@28
+dut.dut.script_state__poll_type
+dut.dut.script_state__read_bytes_valid[1:0]
+[pattern_trace] 1
+[pattern_trace] 0

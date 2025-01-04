@@ -20,6 +20,7 @@
  */
 
 /*a Includes */
+include "utils::debug.h"
 include "apb.h"
 
 /*a Modules - see also csr_target_apb, csr_master_apb in csr_interface.h */
@@ -64,6 +65,22 @@ module apb_processor( clock                    clk        "Clock for the CSR int
     timing from rising clock clk apb_processor_response;
     timing from rising clock clk apb_request, rom_request;
     timing to   rising clock clk apb_response, rom_data;
+}
+
+/*m apb_script_master
+ */
+extern module apb_script_master( clock                    clk        "Clock for the CSR interface; a superset of all targets clock",
+                          input bit                reset_n    "Active low reset",
+                          input t_dbg_master_request    dbg_master_req  "Request from the client to execute from an address in the ROM",
+                          output t_dbg_master_response  dbg_master_resp "Response to the client acknowledging a request",
+                          output t_apb_request     apb_request   "Pipelined csr request interface output",
+                          input t_apb_response     apb_response  "Pipelined csr request interface response"
+    )
+{
+    timing to   rising clock clk dbg_master_req;
+    timing from rising clock clk dbg_master_resp;
+    timing from rising clock clk apb_request;
+    timing to   rising clock clk apb_response;
 }
 
 /*a Editor preferences and notes

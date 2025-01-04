@@ -1,2 +1,3 @@
 from .rom import Rom
-__all__ = [Rom]
+from .script import Script
+__all__ = [Rom, Script]

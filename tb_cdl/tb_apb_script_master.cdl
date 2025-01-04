@@ -1,0 +1,129 @@
+/** Copyright (C) 2016-2017,  Gavin J Stark.  All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * @file  tb_apb_script_master.cdl
+ * @brief Testbench for APB script_master (ROM-based APB trasanctions)
+ *
+ * This is a simple testbench for the ROM-based APB transaction script_master
+ */
+/*a Includes */
+include "std::srams.h"
+include "apb.h"
+include "apb_utilities.h"
+include "apb_targets.h"
+include "apb_masters.h"
+
+/*a Module */
+module tb_apb_script_master( clock clk,
+                         input bit reset_n,
+                             input t_dbg_master_request  dbg_master_req,
+                             output t_dbg_master_response  dbg_master_resp,
+                         output bit[3] timer_equalled
+)
+{
+
+    /*b Nets */
+    net t_dbg_master_response  dbg_master_resp;
+    net t_apb_request             apb_request;
+    net bit[32]                   test_ram_data;
+    net t_apb_response timer_apb_response;
+    net t_apb_response gpio_apb_response;
+    net t_apb_response sram_apb_response;
+    net bit[3] timer_equalled;
+    comb t_apb_response            apb_response;
+    comb t_apb_request timer_apb_request;
+    comb t_apb_request gpio_apb_request;
+    comb t_apb_request sram_apb_request;
+
+    net bit[16] gpio_output;
+    net bit[16] gpio_output_enable;
+    comb bit[16]  gpio_input;
+    net bit     gpio_input_event;
+
+    net bit[32] sram_ctrl;
+    net t_sram_access_req  sram_access_req;
+    comb  t_sram_access_resp sram_access_resp;
+
+    clocked clock clk reset active_low reset_n bit test_ram_in_progress = 0;
+    /*b Instantiations */
+    instantiations: {
+        apb_script_master dut( clk <- clk,
+                       reset_n <= reset_n,
+
+                       dbg_master_req <= dbg_master_req,
+                       dbg_master_resp => dbg_master_resp,
+                       apb_request => apb_request,
+                       apb_response  <= apb_response );
+
+        apb_target_timer timer( clk <- clk,
+                                reset_n <= reset_n,
+                                apb_request  <= timer_apb_request,
+                                apb_response => timer_apb_response,
+                                timer_equalled => timer_equalled );
+
+        apb_target_gpio gpio( clk <- clk,
+                              reset_n <= reset_n,
+                              apb_request  <= gpio_apb_request,
+                              apb_response => gpio_apb_response,
+                              gpio_input <= gpio_input,
+                              gpio_output => gpio_output,
+                              gpio_output_enable => gpio_output_enable,
+                              gpio_input_event => gpio_input_event
+            );
+
+        apb_target_sram_interface sram_if( clk <- clk,
+                                           reset_n <= reset_n,
+                                           apb_request  <= sram_apb_request,
+                                           apb_response => sram_apb_response,
+                                           sram_ctrl => sram_ctrl,
+                                           sram_access_req => sram_access_req,
+                                           sram_access_resp <= sram_access_resp );
+        se_sram_srw_16384x32 test_ram(sram_clock <- clk,
+                                      select <= sram_access_req.valid,
+                                      read_not_write <= sram_access_req.read_not_write,
+                                      write_enable <= !sram_access_req.read_not_write,
+                                      address <= sram_access_req.address[14;0],
+                                      write_data <= sram_access_req.write_data[32;0],
+                                      data_out => test_ram_data );
+
+        timer_apb_request = apb_request;
+        gpio_apb_request = apb_request;
+        sram_apb_request = apb_request;
+        timer_apb_request.psel = apb_request.psel && (apb_request.paddr[4;28]==0);
+        gpio_apb_request.psel  = apb_request.psel && (apb_request.paddr[4;28]==1);
+        sram_apb_request.psel  = apb_request.psel && (apb_request.paddr[4;28]==2);
+        apb_response = timer_apb_response;
+        apb_response |= gpio_apb_response;
+        apb_response |= sram_apb_response;
+        apb_response.pready = timer_apb_response.pready && gpio_apb_response.pready && sram_apb_response.pready;
+        gpio_input = bundle(sram_ctrl[13;0], timer_equalled);
+
+        test_ram_in_progress <= sram_access_req.valid;
+        sram_access_resp = {*=0};
+        sram_access_resp.ack = 1;
+        sram_access_resp.valid = test_ram_in_progress;
+        sram_access_resp.id = 0;
+        sram_access_resp.data = 0;
+        sram_access_resp.data[32;0] = test_ram_data;
+    }
+
+    /*b Logging */
+    default clock clk;
+    default reset active_low reset_n;
+    logging : {
+        apb_logging apb_log( clk <- clk, reset_n <= reset_n, apb_request <= apb_request, apb_response <= apb_response );
+    }
+
+    /*b All done */
+}
