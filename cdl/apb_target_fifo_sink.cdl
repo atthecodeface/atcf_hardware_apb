@@ -39,6 +39,7 @@ typedef enum [4] {
 typedef struct
 {
     t_access access;
+    bit access_in_progress "Asserted for the time that penable is asserted";
     bit[32] data         "Data returned by FIFO sink";
     bit     in_progress  "FIFO sink operation in progress";
     bit     data_valid   "Asserted when FIFO sink data is valid";
@@ -116,9 +117,6 @@ There is a status register that records whether the last data read was *empty* a
         if (!apb_request.psel || apb_request.penable) {
             access = access_none;
         }
-        if (access!=access_none) {
-            req_resp_state.access <= access;
-        }
 
         /*b Handle APB read data */
         apb_response = {*=0, pready=1};
@@ -144,12 +142,22 @@ There is a status register that records whether the last data read was *empty* a
         }
         }
 
+        if (apb_request.psel && !apb_request.penable) {
+            req_resp_state.access_in_progress <= 1;
+        }
+        if (apb_request.penable && apb_response.pready) {
+            req_resp_state.access_in_progress <= 0;
+        }
+
         /*b All done */
     }
 
     /*b Handle FIFO sink requests */
     fifo_sink_logic """
     """: {
+        if (access != access_none) {
+            req_resp_state.access <= access;
+        }
         if (req_resp_state.in_progress) {
             fifo_sink_ctrl.action <= fifo_sink_action_idle;
             if (fifo_sink_resp.valid) {
@@ -160,28 +168,42 @@ There is a status register that records whether the last data read was *empty* a
                         cfg_status.sticky_read_empty <= 1;
                     }
                 }
-                if (fifo_sink_resp.bytes_valid != 0) {
+                if (fifo_sink_resp.bytes_valid == 0) {
+                    req_resp_state.data <= 0;
+                } else {
                     req_resp_state.data <= fifo_sink_resp.data;
                 }
                 req_resp_state.data_valid <= 1;
                 req_resp_state.in_progress <= 0;
             }
-        } elsif (req_resp_state.access==access_read_fifo_status) {
-            req_resp_state.reading_data <= 0;
-            fifo_sink_ctrl.action <= fifo_sink_action_get_status;
-        } elsif (req_resp_state.access==access_read_fifo_data) {
-            req_resp_state.reading_data <= 1;
-            fifo_sink_ctrl.action <= fifo_sink_action_get_status;
-            fifo_sink_ctrl.set_counts <= 1;
-            fifo_sink_ctrl.word_count <= 1;
-            fifo_sink_ctrl.byte_count <= bundle(1b0, cfg_status.words_per_entry, 2b0)+4;
-          } elsif (req_resp_state.access==access_read_fifo_data) {
-              cfg_status.words_per_entry <= apb_request.pwdata[3;0];
-              cfg_status.last_read_empty <= 0;
-              cfg_status.last_read_midentry <= 0;
-              cfg_status.sticky_read_empty <= 0;
-          }
-    }
+        } elsif (req_resp_state.data_valid) {
+            req_resp_state.data_valid <= 0;
+            req_resp_state.access <= access_none;
+        } elsif (req_resp_state.access_in_progress) {
+            part_switch (req_resp_state.access) {
+                case access_read_fifo_status: {
+                    req_resp_state.reading_data <= 0;
+                    fifo_sink_ctrl.action <= fifo_sink_action_get_status;
+                    req_resp_state.in_progress <= 1;
+                }
+                case access_read_fifo_data: {
+                    req_resp_state.reading_data <= 1;
+                    fifo_sink_ctrl.action <= fifo_sink_action_read_data;
+                    fifo_sink_ctrl.set_counts <= 1;
+                    fifo_sink_ctrl.word_count <= 1;
+                    fifo_sink_ctrl.byte_count <= bundle(1b0, cfg_status.words_per_entry, 2b11);
+                    req_resp_state.in_progress <= 1;
+                }
+                case access_write_config: {
+                    cfg_status.words_per_entry <= apb_request.pwdata[3;0];
+                    cfg_status.last_read_empty <= 0;
+                    cfg_status.last_read_midentry <= 0;
+                    cfg_status.sticky_read_empty <= 0;
+                    req_resp_state.access <= access_none;
+                }
+            }
+            }
+        }
 
     /*b Done
      */
