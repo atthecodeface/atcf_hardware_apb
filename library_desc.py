@@ -28,6 +28,7 @@ class ApbModules(cdl_desc.Modules):
     modules += [ CdlModule("csr_target_timeout") ]
     modules += [ CdlModule("tb_apb_processor",src_dir=tb_src_dir) ]
     modules += [ CdlModule("tb_apb_script_master",src_dir=tb_src_dir) ]
+    modules += [ CdlModule("tb_apb_sram_interface",src_dir=tb_src_dir) ]
     modules += [ CdlModule("tb_apb_fifo_sink",src_dir=tb_src_dir) ]
     pass
 

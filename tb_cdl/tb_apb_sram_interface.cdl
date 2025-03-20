@@ -1,0 +1,65 @@
+/*a Includes */
+include "std::srams.h"
+include "utils::sram_access.h"
+include "apb.h"
+include "apb_utilities.h"
+include "apb_targets.h"
+
+/*a Module */
+module tb_apb_sram_interface( clock clk,
+                              input bit reset_n,
+                              input t_apb_request  apb_request,
+                              output t_apb_response apb_response,
+                              output bit[32] sram_ctrl "SRAM control for whatever purpose"
+                              
+)
+{
+
+    /*b Nets */
+    default clock clk;
+    default reset active_low reset_n;
+    clocked bit sram_did_read = 0;
+    clocked bit[32] sram_should_ack = 0;
+    net t_apb_response apb_response;
+    net bit[32] sram_ctrl;
+    net t_sram_access_req  sram_req  "SRAM access request";
+    comb t_sram_access_resp sram_resp "SRAM access response";
+    net bit[32] sram_data_out;
+
+    /*b Instantiations */
+    instantiations: {
+        apb_target_sram_interface dut( clk <- clk,
+                                  reset_n <= reset_n,
+                                  apb_request <= apb_request,
+                                  apb_response => apb_response,
+                                       sram_ctrl => sram_ctrl,
+                                       sram_access_req => sram_req,
+                                       sram_access_resp <= sram_resp
+            );
+
+        se_sram_srw_65536x32 sram( sram_clock <- clk,
+                                   select <= sram_req.valid,
+                                   address <= sram_req.address[16;0],
+                                   read_not_write <= sram_req.read_not_write,
+                                   write_enable <= !sram_req.read_not_write,
+                                   write_data <= sram_req.write_data[32;0],
+                                   data_out => sram_data_out );
+        sram_resp = {*=0};
+        sram_resp.ack = sram_should_ack[0];
+        sram_resp.data[32;0]  = sram_data_out;
+        sram_resp.valid = sram_did_read;
+        sram_did_read <= sram_req.valid && sram_req.read_not_write && sram_resp.ack;
+        sram_should_ack <= sram_should_ack<<1;
+        sram_should_ack[0] <= sram_ctrl[0] ^ sram_should_ack[17] ^ sram_should_ack[13];
+
+    }
+
+    /*b Logging */
+    default clock clk;
+    default reset active_low reset_n;
+    logging : {
+        apb_logging apb_log( clk <- clk, reset_n <= reset_n, apb_request <= apb_request, apb_response <= apb_response );
+    }
+
+    /*b All done */
+}
