@@ -1,0 +1,210 @@
+/*a Includes
+ */
+include "utils::fifo_sink.h"
+include "utils::fifo_status.h"
+include "utils::fifo_modules.h"
+include "apb.h"
+
+/*a Types */
+/*t t_apb_address
+ *
+ * APB address map, used to decode paddr
+ *
+ * All accesses are FIFO data unless otherwise specified
+ *
+ */
+typedef enum [8] {
+    apb_address_cfg_status  = 0 "Configure the number of byte to read per entry etc",
+    apb_address_fifo_status = 1 "Register containing the FIFO status",
+    apb_address_fifo_data   = 2 "Read data from the FIFO; actually ALL other addresses"
+} t_apb_address;
+
+/*t t_access
+ *
+ * APB access that is in progress; a decode of psel and paddr
+ */
+typedef enum [4] {
+    access_none                   "No APB access",
+    access_write_config           "Write configuration (and clear sticky status)",
+    access_read_status            "Read configuration and status",
+    access_read_fifo_status       "Read the FIFO status",
+    access_read_fifo_data         "Read FIFO data, and update status",
+} t_access;
+
+/*t t_req_resp_state
+ *
+ * State captured from the FIFO sink for presentation as prdata
+ *
+ */
+typedef struct
+{
+    t_access access;
+    bit access_in_progress "Asserted for the time that penable is asserted";
+    bit[32] data         "Data returned by FIFO sink";
+    bit     in_progress  "FIFO sink operation in progress";
+    bit     data_valid   "Asserted when FIFO sink data is valid";
+    bit     reading_data "Asserted if FIFO sink operation is for data not status";
+} t_req_resp_state;
+
+/*t t_cfg_status
+ *
+ * The configuration and status
+ *
+ */
+typedef struct
+{
+    bit[3] words_per_entry   "Number of 32-bit words per FIFO entry";
+    bit last_read_empty      "Asserted if the last read was empty";
+    bit last_read_midentry   "Asserted if the last read was *NOT* for the last word of an entry";
+    bit sticky_read_empty    "Asserted if the a read has happened (since this was cleared) of empty data";
+} t_cfg_status;
+
+/*a Module */
+module apb_target_fifo_sink( clock clk         "System clock",
+                             input bit reset_n "Active low reset",
+
+                             input  t_apb_request  apb_request  "APB request",
+                             output t_apb_response apb_response "APB response",
+
+                             output t_fifo_sink_ctrl    fifo_sink_ctrl  "Fifo control request",
+                             input  t_fifo_sink_response fifo_sink_resp "Fifo sink response"
+    )
+"""
+APB target peripheral that talks to a FIFO sink to get data from a FIFO
+
+There is a register which is configured with the number of 32-bit words that the FIFO contains per entry, which must be set before data is read.
+
+There is a status register that records whether the last data read was *empty* and whether it was the last word for a FIFO enty.    
+
+"""
+{
+    /*b Clock and reset */
+    default clock clk;
+    default reset active_low reset_n;
+
+    /*b Decode APB interface */
+    comb t_access access   "Access being performed by APB, combinatorial decode - only not none in first cycle";
+
+    /*b State */
+    clocked t_cfg_status       cfg_status = {*=0};
+    clocked t_req_resp_state   req_resp_state = {*=0};
+    clocked t_fifo_sink_ctrl    fifo_sink_ctrl= {*=0};
+
+    /*b APB interface */
+    apb_interface_logic """
+    The APB interface is decoded to @a access when @p psel is asserted
+    and @p penable is deasserted - this is the first cycle of an APB
+    access. This permits the access type to be registered, so that the
+    APB @p prdata can be driven from registers, and so that writes
+    will occur correctly when @p penable is asserted.
+
+    The APB read data @p prdata can then be generated based on @a
+    access.
+    """ : {
+        /*b Decode access */
+        access = access_none;
+        full_switch (apb_request.paddr[7;0]) {
+        case apb_address_cfg_status: {
+            access = apb_request.pwrite ? access_write_config : access_read_status;
+        }
+        case apb_address_fifo_status: {
+            access = apb_request.pwrite ? access_none : access_read_fifo_status;
+        }
+        default: {
+            access = apb_request.pwrite ? access_none : access_read_fifo_data;
+        }
+        }
+        if (!apb_request.psel || apb_request.penable) {
+            access = access_none;
+        }
+
+        /*b Handle APB read data */
+        apb_response = {*=0, pready=1};
+        part_switch (req_resp_state.access) {
+        case access_read_status: {
+            apb_response.prdata = bundle(
+                24b0,
+                1b0,
+                cfg_status.sticky_read_empty,
+                cfg_status.last_read_empty,
+                cfg_status.last_read_midentry,
+                1b0,
+                cfg_status.words_per_entry
+                );
+        }
+        case access_read_fifo_data: {
+            apb_response.prdata = req_resp_state.data;
+            apb_response.pready = req_resp_state.data_valid;
+        }
+        case access_read_fifo_status: {
+            apb_response.prdata = req_resp_state.data;
+            apb_response.pready = req_resp_state.data_valid;
+        }
+        }
+
+        if (apb_request.psel && !apb_request.penable) {
+            req_resp_state.access_in_progress <= 1;
+        }
+        if (apb_request.penable && apb_response.pready) {
+            req_resp_state.access_in_progress <= 0;
+        }
+
+        /*b All done */
+    }
+
+    /*b Handle FIFO sink requests */
+    fifo_sink_logic """
+    """: {
+        if (access != access_none) {
+            req_resp_state.access <= access;
+        }
+        if (req_resp_state.in_progress) {
+            fifo_sink_ctrl.action <= fifo_sink_action_idle;
+            if (fifo_sink_resp.valid) {
+                if (req_resp_state.reading_data) {
+                    cfg_status.last_read_midentry <= !fifo_sink_resp.last_byte_of_word;
+                    cfg_status.last_read_empty <= fifo_sink_resp.empty;
+                    if (fifo_sink_resp.empty) {
+                        cfg_status.sticky_read_empty <= 1;
+                    }
+                }
+                if (fifo_sink_resp.bytes_valid == 0) {
+                    req_resp_state.data <= 0;
+                } else {
+                    req_resp_state.data <= fifo_sink_resp.data;
+                }
+                req_resp_state.data_valid <= 1;
+                req_resp_state.in_progress <= 0;
+            }
+        } elsif (req_resp_state.data_valid) {
+            req_resp_state.data_valid <= 0;
+            req_resp_state.access <= access_none;
+        } elsif (req_resp_state.access_in_progress) {
+            part_switch (req_resp_state.access) {
+                case access_read_fifo_status: {
+                    req_resp_state.reading_data <= 0;
+                    fifo_sink_ctrl.action <= fifo_sink_action_get_status;
+                    req_resp_state.in_progress <= 1;
+                }
+                case access_read_fifo_data: {
+                    req_resp_state.reading_data <= 1;
+                    fifo_sink_ctrl.action <= fifo_sink_action_read_data;
+                    fifo_sink_ctrl.set_counts <= 1;
+                    fifo_sink_ctrl.word_count <= 1;
+                    fifo_sink_ctrl.byte_count <= bundle(1b0, cfg_status.words_per_entry, 2b11);
+                    req_resp_state.in_progress <= 1;
+                }
+                case access_write_config: {
+                    cfg_status.words_per_entry <= apb_request.pwdata[3;0];
+                    cfg_status.last_read_empty <= 0;
+                    cfg_status.last_read_midentry <= 0;
+                    cfg_status.sticky_read_empty <= 0;
+                    req_resp_state.access <= access_none;
+                }
+            }
+            }
+        }
+
+    /*b Done
+     */
+}
