@@ -21,6 +21,7 @@
 
 /*a Includes */
 include "utils::sram_access.h"
+include "utils::fifo_sink.h"
 include "apb.h"
 
 /*a Modules */
@@ -78,6 +79,25 @@ module apb_target_sram_interface( clock clk         "System clock",
     timing from rising clock clk apb_response;
     timing from rising clock clk sram_access_req, sram_ctrl;
     timing to   rising clock clk sram_access_resp;
+}
+
+/*m apb_target_fifo_sink
+ */
+extern
+module apb_target_fifo_sink( clock clk         "System clock",
+                             input bit reset_n "Active low reset",
+
+                             input  t_apb_request  apb_request  "APB request",
+                             output t_apb_response apb_response "APB response",
+
+                             output t_fifo_sink_ctrl    fifo_sink_ctrl  "Fifo control request",
+                             input  t_fifo_sink_response fifo_sink_resp "Fifo sink response"
+    )
+{
+    timing to   rising clock clk apb_request;
+    timing from rising clock clk apb_response;
+    timing from rising clock clk fifo_sink_ctrl;
+    timing to   rising clock clk fifo_sink_resp;
 }
 
 /*a Editor preferences and notes

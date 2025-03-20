@@ -1,0 +1,71 @@
+/*a Includes */
+include "utils::fifo_sink.h"
+include "utils::fifo_status.h"
+include "utils::fifo_modules.h"
+include "utils::dprintf.h"
+include "utils::dprintf_modules.h"
+include "apb.h"
+include "apb_utilities.h"
+include "apb_targets.h"
+
+/*a Module */
+module tb_apb_fifo_sink( clock clk,
+                         input bit reset_n,
+                         input t_apb_request  apb_request,
+                         output t_apb_response apb_response,
+                         input t_dprintf_req_4 dprintf_req,
+                         output bit dprintf_ack
+)
+{
+
+    /*b Nets */
+    net bit dprintf_ack;
+    net t_apb_response apb_response;
+    net bit pop_fifo;
+    net t_dprintf_req_4 dprintf_fifo_out_req;
+    net t_fifo_sink_ctrl     fifo_sink_ctrl;
+    net t_fifo_sink_response fifo_sink_resp;
+    net t_fifo_status        fifo_status;
+
+    /*b Instantiations */
+    instantiations: {
+        apb_target_fifo_sink dut( clk <- clk,
+                                  reset_n <= reset_n,
+                                  apb_request <= apb_request,
+                                  apb_response => apb_response,
+                                  fifo_sink_ctrl => fifo_sink_ctrl,
+                                  fifo_sink_resp <= fifo_sink_resp
+            );
+
+        dprintf_4_fifo_512 fifo( clk <- clk,
+                                 reset_n <= reset_n,
+                                 req_in <= dprintf_req,
+                                 ack_in => dprintf_ack,
+                                 req_out => dprintf_fifo_out_req,
+                                 ack_out <= pop_fifo,
+                                 fifo_status => fifo_status );
+
+        fifo_sink sink( clk <- clk, reset_n <= reset_n,
+                        fifo_sink_ctrl <= fifo_sink_ctrl,
+                        fifo_resp => fifo_sink_resp,
+                        fifo_status <= fifo_status,
+                        data_valid <= dprintf_fifo_out_req.valid,
+                        data0 <= dprintf_fifo_out_req.data_0,
+                        data1 <= dprintf_fifo_out_req.data_1,
+                        data2 <= dprintf_fifo_out_req.data_2,
+                        data3 <= dprintf_fifo_out_req.data_3,
+                        data4 <= 0,
+                        pop_fifo => pop_fifo,
+                        pop_rdy <= 1b1
+            );
+    }
+
+    /*b Logging */
+    default clock clk;
+    default reset active_low reset_n;
+    logging : {
+        apb_logging apb_log( clk <- clk, reset_n <= reset_n, apb_request <= apb_request, apb_response <= apb_response );
+    }
+
+    /*b All done */
+}
