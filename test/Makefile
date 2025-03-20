@@ -8,8 +8,8 @@ CDL_REGRESS = ${CDL_ROOT}/libexec/cdl/cdl_regress.py
 WAVES ?=
 
 SMOKE_OPTIONS ?= --only-tests 'smoke'
-SMOKE_TESTS   ?= test_timer test_processor test_script test_fifo_sink
-REGRESS_TESTS ?= test_timer test_processor test_script test_fifo_sink
+SMOKE_TESTS   ?= test_timer test_processor test_script test_fifo_sink test_sram_interface
+REGRESS_TESTS ?= test_timer test_processor test_script test_fifo_sink test_sram_interface
 CDL_REGRESS_PACKAGE_DIRS = --package-dir regress:${SRC_ROOT}/python  --package-dir regress:${GRIP_ROOT_PATH}/atcf_hardware_utils/python --package-dir regress:${GRIP_ROOT_PATH}/atcf_hardware_apb/python
 
 .PHONY:smoke
